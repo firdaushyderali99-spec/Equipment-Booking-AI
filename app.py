@@ -185,6 +185,23 @@ def load_data():
     bookings['Booking_Date'] = pd.to_datetime(bookings['Booking_Date'])
     bookings['Request_Date'] = pd.to_datetime(bookings['Request_Date'])
     service['Service_Date'] = pd.to_datetime(service['Service_Date'])
+    
+    # FIX: Recalculate utilization correctly = Load / Capacity * 100
+    # The data may have wrong utilization values, so we recalculate
+    bookings['Crane_Utilization_Pct'] = np.where(
+        (bookings['Ton_Capacity'] > 0) & (bookings['Ton_Capacity'].notna()),
+        (bookings['Load_Weight_T'] / bookings['Ton_Capacity'] * 100).round(1),
+        0
+    )
+    
+    # Assign risk level based on 80% SWL industry standard
+    # Low: <50%, Medium: 50-80%, High: >80%
+    bookings['Risk_Level'] = pd.cut(
+        bookings['Crane_Utilization_Pct'],
+        bins=[-1, 50, 80, 200],
+        labels=['Low', 'Medium', 'High']
+    )
+    
     return bookings, service
 
 try:
@@ -219,7 +236,7 @@ with st.sidebar:
         st.caption(f"📅 {len(service):,} service records")
         st.caption(f"🟢 System Online")
     st.markdown("---")
-    st.caption("v3.1 • Production Build")
+    st.caption("v3.2 • Production Build")
 
 if not data_loaded:
     st.stop()
@@ -239,8 +256,19 @@ def parse_max_swl(swl_str):
     except:
         return None
 
+def get_utilization_level(load_weight, capacity):
+    """Industry standard: 80% SWL is the safe working limit"""
+    if not capacity or capacity == 0:
+        return 'N/A'
+    pct = (load_weight / capacity) * 100
+    if pct > 80:
+        return 'High'
+    elif pct >= 50:
+        return 'Medium'
+    else:
+        return 'Low'
+
 def get_equipment_registry():
-    """Build a clean equipment registry from service data"""
     reg = service.drop_duplicates('Equipment_ID')[['Equipment_ID', 'Equipment_Category', 'Equipment_Type', 'SWL_Capacity', 'Location']].copy()
     reg['Max_SWL'] = reg['SWL_Capacity'].apply(parse_max_swl)
     return reg
@@ -258,18 +286,14 @@ def get_available_equipment(equipment_type, date, service_df, bookings_df):
     return available, list(unavailable)
 
 def get_suitable_equipment(equipment_type, load_weight, date):
-    """Get equipment that can handle the load AND is available on the date"""
     reg = get_equipment_registry()
-    # Filter by type
     candidates = reg[reg['Equipment_Type'] == equipment_type].copy()
-    # Filter by capacity >= load weight
     candidates = candidates[candidates['Max_SWL'] >= load_weight]
-    # Check availability
     available_ids, _ = get_available_equipment(equipment_type, date, service, bookings)
     candidates['Available'] = candidates['Equipment_ID'].isin(available_ids)
-    # Sort: available first, then by closest capacity match
-    candidates['Utilization'] = (load_weight / candidates['Max_SWL'] * 100).round(1)
-    candidates = candidates.sort_values(['Available', 'Utilization'], ascending=[False, False])
+    candidates['Utilization_Pct'] = (load_weight / candidates['Max_SWL'] * 100).round(1)
+    candidates['Risk'] = candidates.apply(lambda r: get_utilization_level(load_weight, r['Max_SWL']), axis=1)
+    candidates = candidates.sort_values(['Available', 'Utilization_Pct'], ascending=[False, False])
     return candidates
 
 def get_equipment_swl(equipment_id):
@@ -315,7 +339,7 @@ def recommend_equipment(load_weight, lift_item):
         if len(flt_equip) == 0:
             flt_equip = equip_registry[equip_registry['Equipment_Category'] == 'Forklift'].nlargest(3, 'Max_SWL')
         for _, eq in flt_equip.sample(min(3, len(flt_equip))).iterrows():
-            util = round((load_weight / eq['Max_SWL']) * 100, 1) if eq['Max_SWL'] and eq['Max_SWL'] > 0 else 0
+            risk = get_utilization_level(load_weight, eq['Max_SWL'])
             score = 90 if (eq['Max_SWL'] and eq['Max_SWL'] >= load_weight) else 60
             recommendations.append({
                 'equipment_id': eq['Equipment_ID'],
@@ -323,7 +347,7 @@ def recommend_equipment(load_weight, lift_item):
                 'capacity': eq['SWL_Capacity'] if pd.notna(eq['SWL_Capacity']) else 'N/A',
                 'max_swl': eq['Max_SWL'],
                 'location': eq['Location'],
-                'reason': f'Forklift for {lift_item} ({util}% utilization)',
+                'reason': f'Forklift for {lift_item} (Risk: {risk})',
                 'match_score': score
             })
         return recommendations
@@ -347,15 +371,15 @@ def recommend_equipment(load_weight, lift_item):
             crane_equip = pd.concat([preferred, crane_equip[crane_equip['Equipment_Type'] != 'Goliath Gantry Crane']])
     
     for _, eq in crane_equip.head(5).iterrows():
-        utilization = round((load_weight / eq['Max_SWL']) * 100, 1) if eq['Max_SWL'] else 0
-        score = min(95, max(50, utilization))
+        risk = get_utilization_level(load_weight, eq['Max_SWL'])
+        score = min(95, max(50, eq['efficiency'])) if 'efficiency' in eq.index else 70
         recommendations.append({
             'equipment_id': eq['Equipment_ID'],
             'type': eq['Equipment_Type'],
             'capacity': eq['SWL_Capacity'] if pd.notna(eq['SWL_Capacity']) else 'N/A',
             'max_swl': eq['Max_SWL'],
             'location': eq['Location'],
-            'reason': f'Capacity {eq["Max_SWL"]:.0f}T handles {load_weight}T ({utilization}% utilization)',
+            'reason': f'Capacity {eq["Max_SWL"]:.0f}T handles {load_weight}T (Risk: {risk})',
             'match_score': int(score)
         })
     
@@ -403,8 +427,8 @@ if page == "📊 Dashboard":
         canc = len(bookings[bookings['Status'] == 'Cancelled'])
         st.metric("Cancelled", f"{canc:,}", f"{canc/total*100:.0f}%")
     with col6:
-        avg_util = bookings['Crane_Utilization_Pct'].mean()
-        st.metric("Avg Utilization", f"{avg_util:.1f}%")
+        high_risk = len(bookings[bookings['Risk_Level'] == 'High'])
+        st.metric("High Risk", f"{high_risk:,}", "⚠️")
     
     st.markdown("---")
     
@@ -434,15 +458,15 @@ if page == "📊 Dashboard":
             top_eq = bookings['Equipment_ID'].value_counts().head(10)
             st.bar_chart(top_eq)
         with col2:
-            st.markdown("#### Priority Levels")
-            prio = bookings['Priority'].value_counts()
-            st.bar_chart(prio)
+            st.markdown("#### Risk Level Distribution")
+            risk_data = bookings['Risk_Level'].value_counts()
+            st.bar_chart(risk_data)
         
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("#### Avg Utilization by Type")
-            util_type = bookings.groupby('Equipment_Type')['Crane_Utilization_Pct'].mean().sort_values(ascending=False).head(10)
-            st.bar_chart(util_type)
+            st.markdown("#### High Risk by Equipment Type")
+            high_risk_type = bookings[bookings['Risk_Level'] == 'High'].groupby('Equipment_Type').size().sort_values(ascending=False).head(10)
+            st.bar_chart(high_risk_type)
         with col2:
             st.markdown("#### By Project")
             proj = bookings['Project'].value_counts()
@@ -456,24 +480,24 @@ if page == "📊 Dashboard":
         with fcol2:
             f_cat = st.selectbox("Filter Category", ['All'] + bookings['Equipment_Category'].unique().tolist(), key="dash_cat")
         with fcol3:
-            f_priority = st.selectbox("Filter Priority", ['All'] + bookings['Priority'].unique().tolist(), key="dash_prio")
+            f_risk = st.selectbox("Filter Risk", ['All', 'High', 'Medium', 'Low'], key="dash_risk")
         
         filtered_bookings = bookings[bookings['Status'].isin(f_status)]
         if f_cat != 'All':
             filtered_bookings = filtered_bookings[filtered_bookings['Equipment_Category'] == f_cat]
-        if f_priority != 'All':
-            filtered_bookings = filtered_bookings[filtered_bookings['Priority'] == f_priority]
+        if f_risk != 'All':
+            filtered_bookings = filtered_bookings[filtered_bookings['Risk_Level'] == f_risk]
         
         st.caption(f"Showing {len(filtered_bookings):,} of {len(bookings):,} bookings")
         st.dataframe(
-            filtered_bookings[['Booking_ID', 'Booking_Date', 'Equipment_Type', 'Equipment_ID', 'Ton_Capacity', 'Load_Weight_T', 'Location', 'Status', 'Priority', 'Crane_Utilization_Pct']].sort_values('Booking_Date', ascending=False),
+            filtered_bookings[['Booking_ID', 'Booking_Date', 'Equipment_Type', 'Equipment_ID', 'Ton_Capacity', 'Load_Weight_T', 'Risk_Level', 'Location', 'Status']].sort_values('Booking_Date', ascending=False),
             use_container_width=True,
             hide_index=True,
             height=500
         )
 
 # ============================================================
-# PAGE: NEW BOOKING (FIXED - Equipment picker + SWL filter)
+# PAGE: NEW BOOKING (with equipment picker + SWL filter)
 # ============================================================
 elif page == "📝 New Booking":
     st.markdown("# 📝 New Booking")
@@ -498,7 +522,7 @@ elif page == "📝 New Booking":
         reg = get_equipment_registry()
         type_equipment = reg[reg['Equipment_Type'] == equipment_type].sort_values('Max_SWL', ascending=False)
         
-        # Build dropdown with Equipment ID + Capacity shown
+        # Build dropdown: Equipment ID + Capacity
         equip_options = ['Auto-select (best match)']
         equip_details = {}
         for _, eq in type_equipment.iterrows():
@@ -513,17 +537,16 @@ elif page == "📝 New Booking":
             }
         
         selected_equip = st.selectbox("Specific Equipment (optional)", equip_options)
-        
         booking_date = st.date_input("Date", value=datetime(2026, 9, 1), min_value=datetime(2026, 8, 1))
         
-        # Show availability status
+        # Availability check
         available_ids, _ = get_available_equipment(equipment_type, booking_date, service, bookings)
         if selected_equip != 'Auto-select (best match)':
             chosen_id = equip_details[selected_equip]['id']
             if chosen_id in available_ids:
                 st.success(f"✅ {chosen_id} is available on {booking_date.strftime('%d %b %Y')}")
             else:
-                st.error(f"❌ {chosen_id} is NOT available on {booking_date.strftime('%d %b %Y')} (maintenance or already booked)")
+                st.error(f"❌ {chosen_id} is NOT available on {booking_date.strftime('%d %b %Y')}")
         else:
             if available_ids:
                 st.success(f"✅ {len(available_ids)} unit(s) available on {booking_date.strftime('%d %b %Y')}")
@@ -547,7 +570,6 @@ elif page == "📝 New Booking":
         load_weight = st.number_input("Load Weight (T)", min_value=0.1, max_value=15000.0, value=50.0)
         duration = st.selectbox("Duration", ['Half Day (AM)', 'Half Day (PM)', 'Full Day', '2 Days', '3 Days', '5 Days', '7 Days'])
         shift = st.selectbox("Shift", ['Day Shift (0700-1900)', 'Night Shift (1900-0700)'])
-        priority = st.selectbox("Priority", ['Low', 'Medium', 'High', 'Urgent'])
         project = st.selectbox("Project", ['Project Alpha', 'Project Beta', 'Project Gamma', 'Project Delta', 'Project Echo', 'Project Foxtrot'])
     
     st.markdown("---")
@@ -556,7 +578,6 @@ elif page == "📝 New Booking":
         st.markdown("---")
         st.markdown("### Results")
         
-        # If specific equipment was chosen
         if selected_equip != 'Auto-select (best match)':
             chosen = equip_details[selected_equip]
             chosen_id = chosen['id']
@@ -564,31 +585,32 @@ elif page == "📝 New Booking":
             
             if max_swl and load_weight > max_swl:
                 st.error(f"❌ **REJECTED** — Load {load_weight}T exceeds {chosen_id} capacity ({max_swl:.0f}T)")
-                st.warning("Please select a higher-capacity equipment or reduce load weight.")
+                st.warning("Select a higher-capacity equipment or reduce load weight.")
                 
-                # Suggest alternatives that CAN handle it
+                # Show alternatives that CAN handle it
                 st.markdown("**Equipment that can handle this load:**")
                 suitable = reg[(reg['Equipment_Type'] == equipment_type) & (reg['Max_SWL'] >= load_weight)]
                 if len(suitable) > 0:
                     for _, s in suitable.head(5).iterrows():
                         avail_mark = "🟢" if s['Equipment_ID'] in available_ids else "🔴"
-                        util = round((load_weight / s['Max_SWL']) * 100, 1)
-                        st.write(f"{avail_mark} **{s['Equipment_ID']}** — SWL: {s['Max_SWL']:.0f}T — Utilization: {util}% — {s['Location']}")
+                        risk = get_utilization_level(load_weight, s['Max_SWL'])
+                        st.write(f"{avail_mark} **{s['Equipment_ID']}** — SWL: {s['Max_SWL']:.0f}T — Risk: {risk} — {s['Location']}")
                 else:
-                    st.warning(f"No {equipment_type} in the yard can handle {load_weight}T. Consider a different equipment type.")
+                    st.warning(f"No {equipment_type} can handle {load_weight}T. Try a different type.")
+            
             elif chosen_id in available_ids:
-                util = round((load_weight / max_swl) * 100, 1) if max_swl else 0
+                risk = get_utilization_level(load_weight, max_swl)
                 st.success(f"✅ **APPROVED** — {chosen_id} available and can handle the load")
                 st.write(f"• **Equipment:** {chosen_id}")
                 st.write(f"• **Capacity:** {max_swl:.0f}T")
                 st.write(f"• **Load:** {load_weight}T")
-                st.write(f"• **Utilization:** {util}%")
+                st.write(f"• **Risk Level:** {risk}")
                 st.write(f"• **Location:** {chosen['location']}")
-                if util > 85:
-                    st.warning(f"⚠️ High utilization ({util}%) — consider a larger crane for safety margin")
+                if risk == 'High':
+                    st.warning(f"⚠️ High risk — load exceeds 80% of SWL. Consider a larger crane.")
             else:
                 st.error(f"❌ {chosen_id} is not available on {booking_date.strftime('%d %b %Y')}")
-                st.markdown("**Alternative dates for this equipment:**")
+                st.markdown("**Alternative dates:**")
                 for i in range(1, 8):
                     alt_date = pd.to_datetime(booking_date) + timedelta(days=i)
                     alt_avail, _ = get_available_equipment(equipment_type, alt_date, service, bookings)
@@ -596,7 +618,7 @@ elif page == "📝 New Booking":
                         st.write(f"• ✅ **{alt_date.strftime('%d %b %Y')}** ({alt_date.strftime('%A')})")
         
         else:
-            # Auto-select: find best equipment (SWL >= load, available, closest capacity match)
+            # Auto-select: only show equipment where SWL >= load weight
             suitable = get_suitable_equipment(equipment_type, load_weight, booking_date)
             
             if len(suitable) == 0:
@@ -607,21 +629,17 @@ elif page == "📝 New Booking":
                 
                 if len(available_suitable) > 0:
                     st.success(f"✅ {len(available_suitable)} suitable unit(s) available (SWL ≥ {load_weight}T)")
-                    st.markdown("**Recommended equipment (sorted by best fit):**")
+                    st.markdown("**Recommended (sorted by best fit):**")
                     
                     for idx, (_, eq) in enumerate(available_suitable.head(5).iterrows()):
-                        util = round((load_weight / eq['Max_SWL']) * 100, 1)
+                        risk = get_utilization_level(load_weight, eq['Max_SWL'])
                         if idx == 0:
-                            st.success(f"🎯 **Best Match: {eq['Equipment_ID']}** — SWL: {eq['Max_SWL']:.0f}T — Utilization: {util}% — {eq['Location']}")
+                            st.success(f"🎯 **Best: {eq['Equipment_ID']}** — SWL: {eq['Max_SWL']:.0f}T — Risk: {risk} — {eq['Location']}")
                         else:
-                            st.write(f"• **{eq['Equipment_ID']}** — SWL: {eq['Max_SWL']:.0f}T — Utilization: {util}% — {eq['Location']}")
+                            st.write(f"• **{eq['Equipment_ID']}** — SWL: {eq['Max_SWL']:.0f}T — Risk: {risk} — {eq['Location']}")
                 else:
-                    st.warning(f"⚠️ Equipment exists that can handle {load_weight}T but none available on {booking_date.strftime('%d %b %Y')}")
-                    st.markdown("**These can handle the load (but unavailable today):**")
-                    for _, eq in suitable.head(3).iterrows():
-                        st.write(f"• 🔴 **{eq['Equipment_ID']}** — SWL: {eq['Max_SWL']:.0f}T")
-                    
-                    st.markdown("**Try these dates instead:**")
+                    st.warning(f"⚠️ Equipment exists but none available on {booking_date.strftime('%d %b %Y')}")
+                    st.markdown("**Try these dates:**")
                     alt_dates = find_best_dates(equipment_type, booking_date)
                     for alt in alt_dates[:3]:
                         st.write(f"• ✅ **{alt['date'].strftime('%d %b %Y')}** — {alt['available_units']} unit(s)")
@@ -661,11 +679,12 @@ elif page == "🤖 AI Recommendation":
             
             if recs:
                 best = recs[0]
+                risk = get_utilization_level(ai_load, best.get('max_swl'))
                 st.success(f"**Best Match: {best['equipment_id']}**")
                 st.write(f"**Type:** {best['type']}")
                 st.write(f"**Capacity:** {best['max_swl']:.0f}T" if best.get('max_swl') else f"**Capacity:** {best['capacity']}")
                 st.write(f"**Location:** {best['location']}")
-                st.write(f"**Match Score:** {best['match_score']}%")
+                st.write(f"**Risk Level:** {risk}")
                 st.write(f"**Reason:** {best['reason']}")
                 
                 # Availability
@@ -687,9 +706,10 @@ elif page == "🤖 AI Recommendation":
                     for i, rec in enumerate(recs[1:], 1):
                         with st.expander(f"Option {i+1}: {rec['equipment_id']} ({rec['type']})"):
                             cap_display = f"{rec['max_swl']:.0f}T" if rec.get('max_swl') else str(rec['capacity'])
+                            alt_risk = get_utilization_level(ai_load, rec.get('max_swl'))
                             st.write(f"Capacity: {cap_display}")
                             st.write(f"Location: {rec['location']}")
-                            st.write(f"Score: {rec['match_score']}%")
+                            st.write(f"Risk: {alt_risk}")
                             st.write(f"Reason: {rec['reason']}")
                 
                 # Safety
@@ -707,7 +727,7 @@ elif page == "🤖 AI Recommendation":
             st.info("Fill in requirements and click Get Recommendation.")
 
 # ============================================================
-# PAGE: CONFLICT ALERTS (FIXED - Better Risk Warnings)
+# PAGE: CONFLICT ALERTS (FIXED - Risk Levels instead of %)
 # ============================================================
 elif page == "⚠️ Conflict Alerts":
     st.markdown("# ⚠️ Conflict Alerts")
@@ -734,7 +754,6 @@ elif page == "⚠️ Conflict Alerts":
                     'Type': bk['Equipment_Type'],
                     'Date': bk['Booking_Date'].strftime('%d %b %Y'),
                     'Service': svc_match.iloc[0]['Service_Type'],
-                    'Priority': bk['Priority'],
                     'Action': 'Reschedule required'
                 })
         
@@ -779,39 +798,51 @@ elif page == "⚠️ Conflict Alerts":
             st.success("No maintenance in next 14 days.")
     
     with tab3:
-        st.markdown("#### ⚠️ High Utilization Bookings (>85%)")
-        st.caption("These bookings are operating close to equipment maximum capacity. While technically safe, they leave minimal safety margin.")
+        st.markdown("#### Risk Warnings")
+        st.caption("Industry standard: Safe working limit is 80% of SWL. Bookings above 80% are flagged as High risk.")
+        st.markdown("---")
         
-        high_util = bookings[
-            (bookings['Crane_Utilization_Pct'] > 85) & 
+        # Show HIGH risk bookings (>80% of SWL)
+        high_risk_bookings = bookings[
+            (bookings['Risk_Level'] == 'High') & 
             (bookings['Status'].isin(['Confirmed', 'Pending']))
         ].sort_values('Crane_Utilization_Pct', ascending=False).copy()
         
-        if not high_util.empty:
-            st.warning(f"⚠️ {len(high_util)} bookings with utilization >85%")
+        if not high_risk_bookings.empty:
+            st.error(f"🔴 {len(high_risk_bookings)} HIGH risk bookings (load exceeds 80% of SWL)")
             
-            # Better display with context
-            display_df = high_util[['Booking_ID', 'Equipment_ID', 'Equipment_Type', 'Ton_Capacity', 'Load_Weight_T', 'Crane_Utilization_Pct', 'Priority', 'Lift_Item']].copy()
-            display_df.columns = ['Booking', 'Equipment', 'Type', 'Capacity (T)', 'Load (T)', 'Utilization %', 'Priority', 'Lift Item']
-            display_df['Explanation'] = display_df.apply(
-                lambda r: f"{r['Load (T)']:.1f}T on {r['Capacity (T)']:.0f}T equipment = {r['Utilization %']:.1f}%", axis=1
-            )
+            display_df = high_risk_bookings[['Booking_ID', 'Equipment_ID', 'Equipment_Type', 'Ton_Capacity', 'Load_Weight_T', 'Risk_Level', 'Lift_Item', 'Location']].copy()
+            display_df.columns = ['Booking', 'Equipment', 'Type', 'SWL (T)', 'Load (T)', 'Risk', 'Lift Item', 'Location']
             
             st.dataframe(
-                display_df[['Booking', 'Equipment', 'Type', 'Capacity (T)', 'Load (T)', 'Utilization %', 'Priority', 'Explanation']].head(20),
+                display_df.head(20),
                 use_container_width=True, hide_index=True
             )
             
             st.markdown("---")
-            st.info("💡 **Why this matters:** Utilization >85% means the load is close to the equipment's rated capacity. "
-                   "While the equipment CAN handle it, there's less safety margin for dynamic loads, wind, or rigging factors. "
-                   "Consider using a higher-capacity equipment for critical lifts.")
+            st.info("💡 **Recommendation:** For High risk bookings, consider using a larger capacity equipment to maintain safety margin below 80% SWL.")
         else:
-            st.success("✅ No high utilization warnings for active bookings")
+            st.success("✅ No high risk bookings for active jobs")
+        
+        st.markdown("---")
+        
+        # Summary of all risk levels
+        st.markdown("#### Risk Distribution (Active Bookings)")
+        active_only = bookings[bookings['Status'].isin(['Confirmed', 'Pending'])]
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            low_count = len(active_only[active_only['Risk_Level'] == 'Low'])
+            st.metric("🟢 Low Risk (<50%)", f"{low_count}")
+        with col2:
+            med_count = len(active_only[active_only['Risk_Level'] == 'Medium'])
+            st.metric("🟡 Medium Risk (50-80%)", f"{med_count}")
+        with col3:
+            high_count = len(active_only[active_only['Risk_Level'] == 'High'])
+            st.metric("🔴 High Risk (>80%)", f"{high_count}")
         
         st.markdown("---")
         st.markdown("#### Rejection Analysis")
-        st.caption("Common reasons bookings get rejected — helps identify patterns")
+        st.caption("Common reasons bookings get rejected")
         rejected = bookings[bookings['Status'] == 'Rejected']
         reason_counts = rejected['Status_Reason'].value_counts().head(8)
         st.bar_chart(reason_counts)
