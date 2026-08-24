@@ -3,6 +3,11 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+import pickle
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
+from sklearn.preprocessing import LabelEncoder
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -10,892 +15,592 @@ warnings.filterwarnings('ignore')
 # PAGE CONFIG
 # ============================================================
 st.set_page_config(
-    page_title="YOS Equipment Booking System",
+    page_title="Equipment Booking AI - Conflict Resolution",
     page_icon="🏗️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # ============================================================
-# PRODUCTION-GRADE DARK THEME CSS
+# CUSTOM CSS
 # ============================================================
 st.markdown("""
 <style>
-    .stApp {
-        background-color: #0e1117;
-        color: #fafafa;
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1E3A5F;
+        text-align: center;
+        margin-bottom: 0.5rem;
     }
-    .stApp p, .stApp span, .stApp label, .stApp li, .stApp td, .stApp th,
-    .stApp div, .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6 {
-        color: #fafafa !important;
+    .sub-header {
+        font-size: 1.1rem;
+        color: #666;
+        text-align: center;
+        margin-bottom: 2rem;
     }
-    [data-testid="stSidebar"] {
-        background-color: #161b22 !important;
-        border-right: 1px solid #30363d;
-    }
-    [data-testid="stSidebar"] * {
-        color: #e6edf3 !important;
-    }
-    [data-testid="stSidebar"] .stRadio label {
-        background-color: #21262d;
-        border-radius: 8px;
-        padding: 10px 16px;
-        margin-bottom: 4px;
-        border: 1px solid #30363d;
-        transition: all 0.2s ease;
-    }
-    [data-testid="stSidebar"] .stRadio label:hover {
-        background-color: #30363d;
-        border-color: #58a6ff;
-    }
-    [data-testid="stMetric"] {
-        background-color: #161b22;
-        border: 1px solid #30363d;
+    .metric-card {
+        background-color: #f0f2f6;
         border-radius: 10px;
-        padding: 16px 20px;
+        padding: 20px;
+        text-align: center;
     }
-    [data-testid="stMetricLabel"] p {
-        color: #8b949e !important;
-        font-size: 12px !important;
-        font-weight: 600 !important;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
+    .conflict-yes {
+        background-color: #ffcccc;
+        padding: 10px;
+        border-radius: 5px;
     }
-    [data-testid="stMetricValue"] {
-        color: #58a6ff !important;
-        font-size: 32px !important;
-        font-weight: 700 !important;
-    }
-    [data-testid="stMetricDelta"] {
-        color: #8b949e !important;
-    }
-    h1 {
-        color: #ffffff !important;
-        font-weight: 700 !important;
-        font-size: 2rem !important;
-    }
-    h2, h3, h4 {
-        color: #e6edf3 !important;
-        font-weight: 600 !important;
-    }
-    .stCaption, [data-testid="stCaptionContainer"] p {
-        color: #8b949e !important;
+    .conflict-no {
+        background-color: #ccffcc;
+        padding: 10px;
+        border-radius: 5px;
     }
     .stTabs [data-baseweb="tab-list"] {
-        background-color: #161b22;
-        border-radius: 10px;
-        padding: 4px;
-        gap: 4px;
-        border: 1px solid #30363d;
+        gap: 8px;
     }
     .stTabs [data-baseweb="tab"] {
-        color: #8b949e !important;
-        border-radius: 8px;
-        font-weight: 500;
-        padding: 8px 16px;
+        padding: 10px 20px;
+        border-radius: 5px;
     }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background-color: #1f6feb !important;
-        color: #ffffff !important;
-    }
-    .stButton > button {
-        background-color: #238636 !important;
-        color: #ffffff !important;
-        border: 1px solid #2ea043 !important;
-        border-radius: 8px;
-        padding: 10px 24px;
-        font-weight: 600;
-        font-size: 14px;
-    }
-    .stButton > button:hover {
-        background-color: #2ea043 !important;
-        border-color: #3fb950 !important;
-        box-shadow: 0 0 10px rgba(46, 160, 67, 0.3);
-    }
-    [data-testid="stDataFrame"] {
-        border-radius: 10px;
-        overflow: hidden;
-        border: 1px solid #30363d;
-    }
-    .stSelectbox > div > div,
-    .stDateInput > div > div,
-    .stNumberInput > div > div {
-        background-color: #0d1117 !important;
-        border: 1px solid #30363d !important;
-        border-radius: 8px !important;
-        color: #e6edf3 !important;
-    }
-    .stSelectbox label, .stDateInput label, .stNumberInput label {
-        color: #8b949e !important;
-        font-weight: 500 !important;
-        font-size: 13px !important;
-    }
-    [data-testid="stVegaLiteChart"] {
-        background-color: #161b22 !important;
-        border-radius: 10px;
-        padding: 16px;
-        border: 1px solid #30363d;
-    }
-    .streamlit-expanderHeader {
-        background-color: #161b22 !important;
-        border: 1px solid #30363d !important;
-        border-radius: 8px !important;
-        color: #e6edf3 !important;
-    }
-    .streamlit-expanderContent {
-        background-color: #0d1117 !important;
-        border: 1px solid #30363d !important;
-        border-top: none !important;
-    }
-    hr {
-        border: none;
-        height: 1px;
-        background-color: #30363d;
-        margin: 24px 0;
-    }
-    .stMarkdown table {
-        background-color: #161b22;
-        border-radius: 8px;
-        overflow: hidden;
-    }
-    .stMarkdown th {
-        background-color: #21262d !important;
-        color: #e6edf3 !important;
-        padding: 10px 16px !important;
-    }
-    .stMarkdown td {
-        color: #c9d1d9 !important;
-        padding: 10px 16px !important;
-        border-color: #30363d !important;
-    }
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: #0d1117; }
-    ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #484f58; }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# LOAD DATA
-# ============================================================
-@st.cache_data
-def load_data():
-    bookings = pd.read_excel('Updated_Equipment_Bookings_AI_Training.xlsx')
-    service = pd.read_excel('Crane_Service_Schedule_2026.xlsx')
-    bookings['Booking_Date'] = pd.to_datetime(bookings['Booking_Date'])
-    bookings['Request_Date'] = pd.to_datetime(bookings['Request_Date'])
-    service['Service_Date'] = pd.to_datetime(service['Service_Date'])
-    
-    # FIX: Recalculate utilization correctly = Load / Capacity * 100
-    # The data may have wrong utilization values, so we recalculate
-    bookings['Crane_Utilization_Pct'] = np.where(
-        (bookings['Ton_Capacity'] > 0) & (bookings['Ton_Capacity'].notna()),
-        (bookings['Load_Weight_T'] / bookings['Ton_Capacity'] * 100).round(1),
-        0
-    )
-    
-    # Assign risk level based on 80% SWL industry standard
-    # Low: <50%, Medium: 50-80%, High: >80%
-    bookings['Risk_Level'] = pd.cut(
-        bookings['Crane_Utilization_Pct'],
-        bins=[-1, 50, 80, 200],
-        labels=['Low', 'Medium', 'High']
-    )
-    
-    return bookings, service
-
-try:
-    bookings, service = load_data()
-    data_loaded = True
-except Exception as e:
-    data_loaded = False
-    st.error(f"⚠️ Data loading error: {e}")
-    st.info("Ensure 'Updated_Equipment_Bookings_AI_Training.xlsx' and 'Crane_Service_Schedule_2026.xlsx' are in the repo.")
-
-# ============================================================
-# SIDEBAR
-# ============================================================
-with st.sidebar:
-    st.markdown("## 🏗️ YOS Booking")
-    st.caption("Seatrium (SG) Pte Ltd • Tuas Boulevard Yard")
-    st.markdown("---")
-    
-    page = st.radio("Navigation", [
-        "📊 Dashboard",
-        "📝 New Booking",
-        "🤖 AI Recommendation",
-        "⚠️ Conflict Alerts",
-        "📅 Service Schedule"
-    ], label_visibility="collapsed")
-    
-    st.markdown("---")
-    if data_loaded:
-        st.markdown("**System Status**")
-        st.caption(f"📋 {len(bookings):,} bookings")
-        st.caption(f"🔧 {service['Equipment_ID'].nunique()} equipment")
-        st.caption(f"📅 {len(service):,} service records")
-        st.caption(f"🟢 System Online")
-    st.markdown("---")
-    st.caption("v3.2 • Production Build")
-
-if not data_loaded:
-    st.stop()
-
-# ============================================================
 # HELPER FUNCTIONS
 # ============================================================
-def parse_max_swl(swl_str):
-    if pd.isna(swl_str) or str(swl_str) in ['N/A', 'nan', 'None', '']:
-        return None
-    swl_str = str(swl_str).upper().replace('TON', '').replace('T', '').strip()
-    if '/' in swl_str:
-        parts = swl_str.split('/')
-        return max([float(p.strip()) for p in parts if p.strip()])
-    try:
-        return float(swl_str)
-    except:
-        return None
 
-def get_utilization_level(load_weight, capacity):
-    """Industry standard: 80% SWL is the safe working limit"""
-    if not capacity or capacity == 0:
-        return 'N/A'
-    pct = (load_weight / capacity) * 100
-    if pct > 80:
-        return 'High'
-    elif pct >= 50:
-        return 'Medium'
-    else:
-        return 'Low'
+# Duration mapping
+DURATION_MAP = {
+    'Half Day (AM)': 0.5,
+    'Half Day (PM)': 0.5,
+    'Full Day': 1,
+    '2 Days': 2,
+    '3 Days': 3,
+    '5 Days': 5,
+    '7 Days': 7,
+    '10 Days': 10,
+    '14 Days': 14,
+}
 
-def get_equipment_registry():
-    reg = service.drop_duplicates('Equipment_ID')[['Equipment_ID', 'Equipment_Category', 'Equipment_Type', 'SWL_Capacity', 'Location']].copy()
-    reg['Max_SWL'] = reg['SWL_Capacity'].apply(parse_max_swl)
-    return reg
+PRIORITY_SCORES = {"Low": 1, "Medium": 2, "High": 3, "Urgent": 4}
 
-def get_available_equipment(equipment_type, date, service_df, bookings_df):
-    date = pd.to_datetime(date)
-    service_on_date = service_df[service_df['Service_Date'] == date]['Equipment_ID'].tolist()
-    booked_on_date = bookings_df[
-        (bookings_df['Booking_Date'] == date) & 
-        (bookings_df['Status'].isin(['Confirmed', 'Pending']))
-    ]['Equipment_ID'].tolist()
-    all_equipment = service_df[service_df['Equipment_Type'] == equipment_type]['Equipment_ID'].unique().tolist()
-    unavailable = set(service_on_date + booked_on_date)
-    available = [eq for eq in all_equipment if eq not in unavailable]
-    return available, list(unavailable)
 
-def get_suitable_equipment(equipment_type, load_weight, date):
-    reg = get_equipment_registry()
-    candidates = reg[reg['Equipment_Type'] == equipment_type].copy()
-    candidates = candidates[candidates['Max_SWL'] >= load_weight]
-    available_ids, _ = get_available_equipment(equipment_type, date, service, bookings)
-    candidates['Available'] = candidates['Equipment_ID'].isin(available_ids)
-    candidates['Utilization_Pct'] = (load_weight / candidates['Max_SWL'] * 100).round(1)
-    candidates['Risk'] = candidates.apply(lambda r: get_utilization_level(load_weight, r['Max_SWL']), axis=1)
-    candidates = candidates.sort_values(['Available', 'Utilization_Pct'], ascending=[False, False])
-    return candidates
+@st.cache_data
+def load_data():
+    """Load the equipment bookings dataset."""
+    df = pd.read_excel('data/Equipment_Bookings_AI_Training.xlsx')
+    return df
 
-def get_equipment_swl(equipment_id):
-    equip = service[service['Equipment_ID'] == equipment_id]
-    if len(equip) > 0:
-        return equip.iloc[0]['SWL_Capacity']
-    return 'N/A'
 
-def recommend_equipment(load_weight, lift_item):
-    recommendations = []
-    equip_registry = get_equipment_registry()
+def calculate_end_date(booking_date, duration):
+    """Calculate end date based on booking date and duration."""
+    days = DURATION_MAP.get(duration, 1)
+    if days >= 1:
+        return booking_date + timedelta(days=int(days) - 1)
+    return booking_date
+
+
+def detect_conflicts(df, new_booking):
+    """Detect conflicts between a new booking and existing bookings."""
+    new_start = pd.to_datetime(new_booking['Booking_Date'])
+    new_end = calculate_end_date(new_start, new_booking['Duration'])
+    new_equipment = new_booking['Equipment_ID']
+    new_shift = new_booking['Shift']
     
-    if lift_item in ['Personnel Access Work', 'Inspection Work', 'Painting Work']:
-        mewp_equip = equip_registry[equip_registry['Equipment_Category'] == 'MEWP']
-        for _, eq in mewp_equip.sample(min(3, len(mewp_equip))).iterrows():
-            recommendations.append({
-                'equipment_id': eq['Equipment_ID'],
-                'type': eq['Equipment_Type'],
-                'capacity': eq['SWL_Capacity'] if pd.notna(eq['SWL_Capacity']) else 'N/A',
-                'max_swl': eq['Max_SWL'],
-                'location': eq['Location'],
-                'reason': f'MEWP suitable for {lift_item}',
-                'match_score': 95
-            })
-        return recommendations
-    
-    if lift_item in ['Block Transportation', 'Module Transportation', 'Equipment Relocation']:
-        cometto_equip = equip_registry[equip_registry['Equipment_Category'] == 'Cometto']
-        for _, eq in cometto_equip.sample(min(3, len(cometto_equip))).iterrows():
-            recommendations.append({
-                'equipment_id': eq['Equipment_ID'],
-                'type': eq['Equipment_Type'],
-                'capacity': eq['SWL_Capacity'] if pd.notna(eq['SWL_Capacity']) else 'N/A',
-                'max_swl': eq['Max_SWL'],
-                'location': eq['Location'],
-                'reason': f'Cometto/SPMT for {lift_item}',
-                'match_score': 90
-            })
-        return recommendations
-    
-    if lift_item in ['Steel Plates', 'Pipe Bundles', 'Welding Materials', 'PPE Supplies', 'Insulation Materials', 'Safety Equipment']:
-        flt_equip = equip_registry[(equip_registry['Equipment_Category'] == 'Forklift') & (equip_registry['Max_SWL'] >= load_weight)]
-        if len(flt_equip) == 0:
-            flt_equip = equip_registry[equip_registry['Equipment_Category'] == 'Forklift'].nlargest(3, 'Max_SWL')
-        for _, eq in flt_equip.sample(min(3, len(flt_equip))).iterrows():
-            risk = get_utilization_level(load_weight, eq['Max_SWL'])
-            score = 90 if (eq['Max_SWL'] and eq['Max_SWL'] >= load_weight) else 60
-            recommendations.append({
-                'equipment_id': eq['Equipment_ID'],
-                'type': eq['Equipment_Type'],
-                'capacity': eq['SWL_Capacity'] if pd.notna(eq['SWL_Capacity']) else 'N/A',
-                'max_swl': eq['Max_SWL'],
-                'location': eq['Location'],
-                'reason': f'Forklift for {lift_item} (Risk: {risk})',
-                'match_score': score
-            })
-        return recommendations
-    
-    # Crane items
-    crane_equip = equip_registry[
-        (equip_registry['Equipment_Category'] == 'Crane') & 
-        (equip_registry['Max_SWL'] >= load_weight)
+    # Filter for same equipment and shift
+    same_equipment = df[
+        (df['Equipment_ID'] == new_equipment) & 
+        (df['Shift'] == new_shift) &
+        (df['Status'].isin(['Confirmed', 'Pending', 'Completed']))
     ].copy()
     
-    if len(crane_equip) == 0:
-        crane_equip = equip_registry[equip_registry['Equipment_Category'] == 'Crane'].nlargest(5, 'Max_SWL')
+    if same_equipment.empty:
+        return pd.DataFrame(), False
     
-    crane_equip = crane_equip.copy()
-    crane_equip['efficiency'] = load_weight / crane_equip['Max_SWL'] * 100
-    crane_equip = crane_equip.sort_values('efficiency', ascending=False)
+    same_equipment['Booking_Date_dt'] = pd.to_datetime(same_equipment['Booking_Date'])
+    same_equipment['End_Date_dt'] = same_equipment.apply(
+        lambda row: calculate_end_date(row['Booking_Date_dt'], row['Duration']), axis=1
+    )
     
-    if lift_item in ['Mega Block Section', 'Offshore Platform Topside', 'Jacket Structure'] and load_weight > 200:
-        preferred = crane_equip[crane_equip['Equipment_Type'] == 'Goliath Gantry Crane']
-        if len(preferred) > 0:
-            crane_equip = pd.concat([preferred, crane_equip[crane_equip['Equipment_Type'] != 'Goliath Gantry Crane']])
+    # Check overlap
+    conflicts = same_equipment[
+        (same_equipment['Booking_Date_dt'] <= new_end) & 
+        (same_equipment['End_Date_dt'] >= new_start)
+    ]
     
-    for _, eq in crane_equip.head(5).iterrows():
-        risk = get_utilization_level(load_weight, eq['Max_SWL'])
-        score = min(95, max(50, eq['efficiency'])) if 'efficiency' in eq.index else 70
-        recommendations.append({
-            'equipment_id': eq['Equipment_ID'],
-            'type': eq['Equipment_Type'],
-            'capacity': eq['SWL_Capacity'] if pd.notna(eq['SWL_Capacity']) else 'N/A',
-            'max_swl': eq['Max_SWL'],
-            'location': eq['Location'],
-            'reason': f'Capacity {eq["Max_SWL"]:.0f}T handles {load_weight}T (Risk: {risk})',
-            'match_score': int(score)
+    return conflicts, len(conflicts) > 0
+
+
+def resolve_conflict(new_booking, conflicts):
+    """Resolve conflict based on priority and FCFS rules."""
+    new_priority = PRIORITY_SCORES.get(new_booking['Priority'], 2)
+    new_request_date = pd.to_datetime(new_booking['Request_Date'])
+    
+    results = []
+    
+    for _, conflict in conflicts.iterrows():
+        conflict_priority = PRIORITY_SCORES.get(conflict['Priority'], 2)
+        conflict_request_date = pd.to_datetime(conflict['Request_Date'])
+        
+        if new_priority > conflict_priority:
+            resolution = "Priority Override - New booking WINS"
+            new_wins = True
+        elif new_priority < conflict_priority:
+            resolution = "Yielded to Higher Priority - Existing booking WINS"
+            new_wins = False
+        else:
+            # Same priority - FCFS
+            if new_request_date <= conflict_request_date:
+                resolution = "First-Come-First-Served - New booking WINS"
+                new_wins = True
+            else:
+                resolution = "First-Come-First-Served - Existing booking WINS"
+                new_wins = False
+        
+        results.append({
+            'Conflicting_Booking': conflict['Booking_ID'],
+            'Conflict_Equipment': conflict['Equipment_ID'],
+            'Conflict_Priority': conflict['Priority'],
+            'Conflict_Request_Date': conflict['Request_Date'],
+            'Conflict_Booking_Date': conflict['Booking_Date'],
+            'Conflict_Duration': conflict['Duration'],
+            'Resolution': resolution,
+            'New_Booking_Wins': new_wins
         })
     
-    return recommendations
+    return pd.DataFrame(results)
 
-def find_best_dates(equipment_type, preferred_date, days_range=7):
-    preferred = pd.to_datetime(preferred_date)
-    available_dates = []
-    for i in range(-days_range, days_range + 1):
-        check_date = preferred + timedelta(days=i)
-        if check_date.weekday() < 6:
-            available, _ = get_available_equipment(equipment_type, check_date, service, bookings)
-            if available:
-                available_dates.append({
-                    'date': check_date,
-                    'available_units': len(available),
-                    'equipment_ids': available[:5],
-                    'days_from_preferred': abs(i)
-                })
-    available_dates.sort(key=lambda x: (x['days_from_preferred'], -x['available_units']))
-    return available_dates[:5]
+
+@st.cache_resource
+def train_model(df):
+    """Train ML model for conflict resolution prediction."""
+    # Prepare features
+    df_model = df.copy()
+    df_model['Priority_Score'] = df_model['Priority'].map(PRIORITY_SCORES)
+    df_model['Duration_Days'] = df_model['Duration'].map(DURATION_MAP)
+    df_model['Request_Date_dt'] = pd.to_datetime(df_model['Request_Date'])
+    df_model['Booking_Date_dt'] = pd.to_datetime(df_model['Booking_Date'])
+    df_model['Lead_Time'] = (df_model['Booking_Date_dt'] - df_model['Request_Date_dt']).dt.days
+    
+    # Encode categorical variables
+    le_equipment_cat = LabelEncoder()
+    le_equipment_type = LabelEncoder()
+    le_shift = LabelEncoder()
+    le_project = LabelEncoder()
+    le_weather = LabelEncoder()
+    
+    df_model['Equipment_Category_Enc'] = le_equipment_cat.fit_transform(df_model['Equipment_Category'].astype(str))
+    df_model['Equipment_Type_Enc'] = le_equipment_type.fit_transform(df_model['Equipment_Type'].astype(str))
+    df_model['Shift_Enc'] = le_shift.fit_transform(df_model['Shift'].astype(str))
+    df_model['Project_Enc'] = le_project.fit_transform(df_model['Project'].astype(str))
+    df_model['Weather_Enc'] = le_weather.fit_transform(df_model['Weather_Condition'].astype(str))
+    
+    # Target variable
+    if 'Wins_Equipment' in df_model.columns:
+        df_model['Target'] = (df_model['Wins_Equipment'] == 'Yes').astype(int)
+    else:
+        df_model['Target'] = 1  # Default
+    
+    features = ['Priority_Score', 'Duration_Days', 'Lead_Time', 
+                'Equipment_Category_Enc', 'Equipment_Type_Enc', 
+                'Shift_Enc', 'Project_Enc', 'Weather_Enc',
+                'Wind_Speed_Knots', 'Crane_Utilization_Pct']
+    
+    X = df_model[features].fillna(0)
+    y = df_model['Target']
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    model = GradientBoostingClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+    
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    
+    encoders = {
+        'equipment_cat': le_equipment_cat,
+        'equipment_type': le_equipment_type,
+        'shift': le_shift,
+        'project': le_project,
+        'weather': le_weather,
+    }
+    
+    return model, encoders, accuracy, features, classification_report(y_test, y_pred, output_dict=True)
+
+
+# ============================================================
+# MAIN APP
+# ============================================================
+
+st.markdown('<div class="main-header">🏗️ Equipment Booking AI</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Intelligent Conflict Detection & Resolution System for Shipyard Operations</div>', unsafe_allow_html=True)
+
+# Sidebar
+with st.sidebar:
+    st.image("https://img.icons8.com/color/96/crane.png", width=80)
+    st.title("Navigation")
+    st.markdown("---")
+    
+    page = st.radio(
+        "Select Module",
+        ["📊 Dashboard", "📋 Booking Manager", "⚠️ Conflict Detector", "🤖 AI Prediction", "📈 Analytics"],
+        index=0
+    )
+    
+    st.markdown("---")
+    st.markdown("### System Info")
+    st.info(f"📅 Date: {datetime.now().strftime('%Y-%m-%d')}")
+    st.info("🔄 Model: Gradient Boosting")
+    st.info("📦 Records: 1,230 bookings")
+
+# Load data
+try:
+    df = load_data()
+except:
+    st.warning("⚠️ Data file not found. Please place 'Equipment_Bookings_AI_Training.xlsx' in the 'data/' folder.")
+    st.stop()
 
 # ============================================================
 # PAGE: DASHBOARD
 # ============================================================
 if page == "📊 Dashboard":
-    st.markdown("# 📊 Dashboard")
-    st.caption("Equipment booking overview • Tuas Boulevard Yard • 2026")
-    st.markdown("---")
+    st.header("📊 Operations Dashboard")
     
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-    total = len(bookings)
+    # Key Metrics
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
     with col1:
-        st.metric("Total Bookings", f"{total:,}")
+        st.metric("Total Bookings", len(df))
     with col2:
-        comp = len(bookings[bookings['Status'] == 'Completed'])
-        st.metric("Completed", f"{comp:,}", f"{comp/total*100:.0f}%")
+        conflict_count = len(df[df.get('Has_Conflict', pd.Series(['No']*len(df))) == 'Yes'])
+        st.metric("Conflicts Detected", conflict_count)
     with col3:
-        active = len(bookings[bookings['Status'].isin(['Confirmed', 'Pending'])])
-        st.metric("Active", f"{active:,}", f"{active/total*100:.0f}%")
+        st.metric("Equipment Units", df['Equipment_ID'].nunique())
     with col4:
-        rej = len(bookings[bookings['Status'] == 'Rejected'])
-        st.metric("Rejected", f"{rej:,}", f"{rej/total*100:.0f}%")
+        st.metric("Active Projects", df['Project'].nunique())
     with col5:
-        canc = len(bookings[bookings['Status'] == 'Cancelled'])
-        st.metric("Cancelled", f"{canc:,}", f"{canc/total*100:.0f}%")
-    with col6:
-        high_risk = len(bookings[bookings['Risk_Level'] == 'High'])
-        st.metric("High Risk", f"{high_risk:,}", "⚠️")
+        completion_rate = len(df[df['Status'] == 'Completed']) / len(df) * 100
+        st.metric("Completion Rate", f"{completion_rate:.1f}%")
     
     st.markdown("---")
     
-    tab1, tab2, tab3 = st.tabs(["Overview", "Analysis", "Bookings Table"])
-    
-    with tab1:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("#### Status Breakdown")
-            status_data = bookings['Status'].value_counts()
-            st.bar_chart(status_data)
-        with col2:
-            st.markdown("#### Equipment Category")
-            cat_data = bookings['Equipment_Category'].value_counts()
-            st.bar_chart(cat_data)
-        
-        st.markdown("#### Monthly Trend")
-        monthly = bookings.copy()
-        monthly['Month'] = monthly['Booking_Date'].dt.to_period('M').astype(str)
-        trend = monthly.groupby('Month').size()
-        st.line_chart(trend)
-    
-    with tab2:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("#### Top Equipment (by bookings)")
-            top_eq = bookings['Equipment_ID'].value_counts().head(10)
-            st.bar_chart(top_eq)
-        with col2:
-            st.markdown("#### Risk Level Distribution")
-            risk_data = bookings['Risk_Level'].value_counts()
-            st.bar_chart(risk_data)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("#### High Risk by Equipment Type")
-            high_risk_type = bookings[bookings['Risk_Level'] == 'High'].groupby('Equipment_Type').size().sort_values(ascending=False).head(10)
-            st.bar_chart(high_risk_type)
-        with col2:
-            st.markdown("#### By Project")
-            proj = bookings['Project'].value_counts()
-            st.bar_chart(proj)
-    
-    with tab3:
-        st.markdown("#### All Bookings")
-        fcol1, fcol2, fcol3 = st.columns(3)
-        with fcol1:
-            f_status = st.multiselect("Filter Status", bookings['Status'].unique().tolist(), default=bookings['Status'].unique().tolist())
-        with fcol2:
-            f_cat = st.selectbox("Filter Category", ['All'] + bookings['Equipment_Category'].unique().tolist(), key="dash_cat")
-        with fcol3:
-            f_risk = st.selectbox("Filter Risk", ['All', 'High', 'Medium', 'Low'], key="dash_risk")
-        
-        filtered_bookings = bookings[bookings['Status'].isin(f_status)]
-        if f_cat != 'All':
-            filtered_bookings = filtered_bookings[filtered_bookings['Equipment_Category'] == f_cat]
-        if f_risk != 'All':
-            filtered_bookings = filtered_bookings[filtered_bookings['Risk_Level'] == f_risk]
-        
-        st.caption(f"Showing {len(filtered_bookings):,} of {len(bookings):,} bookings")
-        st.dataframe(
-            filtered_bookings[['Booking_ID', 'Booking_Date', 'Equipment_Type', 'Equipment_ID', 'Ton_Capacity', 'Load_Weight_T', 'Risk_Level', 'Location', 'Status']].sort_values('Booking_Date', ascending=False),
-            use_container_width=True,
-            hide_index=True,
-            height=500
-        )
-
-# ============================================================
-# PAGE: NEW BOOKING (with equipment picker + SWL filter)
-# ============================================================
-elif page == "📝 New Booking":
-    st.markdown("# 📝 New Booking")
-    st.caption("Create a new equipment booking with real-time availability and capacity checking")
-    st.markdown("---")
-    
-    col1, col2 = st.columns(2, gap="large")
+    col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("#### Equipment Selection")
-        equipment_category = st.selectbox("Category", ['Crane', 'MEWP', 'Cometto', 'Forklift'])
+        st.subheader("Bookings by Equipment Category")
+        cat_counts = df['Equipment_Category'].value_counts()
+        st.bar_chart(cat_counts)
+    
+    with col2:
+        st.subheader("Bookings by Priority")
+        priority_counts = df['Priority'].value_counts()
+        st.bar_chart(priority_counts)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Status Distribution")
+        status_counts = df['Status'].value_counts()
+        st.bar_chart(status_counts)
+    
+    with col2:
+        st.subheader("Bookings by Project")
+        project_counts = df['Project'].value_counts()
+        st.bar_chart(project_counts)
+    
+    # Conflict Resolution Summary
+    if 'Conflict_Resolution' in df.columns:
+        st.subheader("⚠️ Conflict Resolution Summary")
+        resolution_counts = df['Conflict_Resolution'].value_counts()
+        st.dataframe(resolution_counts.reset_index().rename(
+            columns={'index': 'Resolution Method', 'Conflict_Resolution': 'Resolution Method', 'count': 'Count'}
+        ), use_container_width=True)
+
+
+# ============================================================
+# PAGE: BOOKING MANAGER
+# ============================================================
+elif page == "📋 Booking Manager":
+    st.header("📋 Booking Manager")
+    
+    # Filters
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        filter_category = st.multiselect("Equipment Category", df['Equipment_Category'].unique())
+    with col2:
+        filter_project = st.multiselect("Project", sorted(df['Project'].unique()))
+    with col3:
+        filter_priority = st.multiselect("Priority", ['Low', 'Medium', 'High', 'Urgent'])
+    with col4:
+        filter_status = st.multiselect("Status", df['Status'].unique())
+    
+    # Apply filters
+    filtered_df = df.copy()
+    if filter_category:
+        filtered_df = filtered_df[filtered_df['Equipment_Category'].isin(filter_category)]
+    if filter_project:
+        filtered_df = filtered_df[filtered_df['Project'].isin(filter_project)]
+    if filter_priority:
+        filtered_df = filtered_df[filtered_df['Priority'].isin(filter_priority)]
+    if filter_status:
+        filtered_df = filtered_df[filtered_df['Status'].isin(filter_status)]
+    
+    st.markdown(f"**Showing {len(filtered_df)} of {len(df)} bookings**")
+    
+    # Display columns
+    display_cols = ['Booking_ID', 'Booking_Date', 'Equipment_Category', 'Equipment_Type', 
+                    'Equipment_ID', 'Location', 'Project', 'Lift_Item', 'Duration', 
+                    'Priority', 'Status']
+    if 'Has_Conflict' in filtered_df.columns:
+        display_cols.extend(['Has_Conflict', 'Conflict_Resolution', 'Wins_Equipment'])
+    
+    st.dataframe(filtered_df[display_cols], use_container_width=True, height=500)
+
+
+# ============================================================
+# PAGE: CONFLICT DETECTOR
+# ============================================================
+elif page == "⚠️ Conflict Detector":
+    st.header("⚠️ Conflict Detection & Resolution")
+    st.markdown("Submit a new booking request to check for scheduling conflicts.")
+    
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📝 New Booking Request")
         
-        type_map = {
-            'Crane': ['Level Luffing Crane', 'Goliath Gantry Crane', 'Crawler Crane', 'Mobile Crane', 'Tower Crane', 'Workshop Crane'],
-            'MEWP': ['Scissor Lift 10m', 'Boom Lift 20m', 'Articulating Boom Lift 26m', 'Telescopic Boom Lift 30m'],
-            'Cometto': ['Cometto MSPE 8 Axle Lines', 'Cometto Eco500 12 Axle Lines', 'SPMT 16 Axle Lines', 'SPMT 24 Axle Lines'],
-            'Forklift': ['Counterbalance Forklift', 'Heavy Duty Forklift', 'Telehandler Forklift', 'Reach Forklift']
-        }
-        equipment_type = st.selectbox("Type", type_map[equipment_category])
+        new_request_date = st.date_input("Request Date", datetime.now())
+        new_booking_date = st.date_input("Booking Date", datetime.now() + timedelta(days=3))
         
-        # Get all equipment of this type with their SWL
-        reg = get_equipment_registry()
-        type_equipment = reg[reg['Equipment_Type'] == equipment_type].sort_values('Max_SWL', ascending=False)
+        equipment_categories = df['Equipment_Category'].unique().tolist()
+        new_category = st.selectbox("Equipment Category", equipment_categories)
         
-        # Build dropdown: Equipment ID + Capacity
-        equip_options = ['Auto-select (best match)']
-        equip_details = {}
-        for _, eq in type_equipment.iterrows():
-            swl_display = f"{eq['Max_SWL']:.0f}T" if pd.notna(eq['Max_SWL']) else "N/A"
-            label = f"{eq['Equipment_ID']} — SWL: {swl_display} — {eq['Location']}"
-            equip_options.append(label)
-            equip_details[label] = {
-                'id': eq['Equipment_ID'],
-                'max_swl': eq['Max_SWL'],
-                'location': eq['Location'],
-                'swl_capacity': eq['SWL_Capacity']
+        # Filter equipment types based on category
+        available_types = df[df['Equipment_Category'] == new_category]['Equipment_Type'].unique().tolist()
+        new_type = st.selectbox("Equipment Type", available_types)
+        
+        # Filter equipment IDs based on type
+        available_ids = df[df['Equipment_Type'] == new_type]['Equipment_ID'].unique().tolist()
+        new_equipment_id = st.selectbox("Equipment Unit", available_ids)
+        
+        new_duration = st.selectbox("Duration", list(DURATION_MAP.keys()))
+        new_shift = st.selectbox("Shift", ['Day Shift (0700-1900)', 'Night Shift (1900-0700)'])
+        new_priority = st.selectbox("Priority", ['Low', 'Medium', 'High', 'Urgent'])
+        new_project = st.selectbox("Project", sorted(df['Project'].unique().tolist()))
+        
+        # Location
+        available_locations = df['Location'].unique().tolist()
+        new_location = st.selectbox("Location", available_locations)
+        
+        new_lift_item = st.text_input("Lift Item", "Steel Block Section")
+    
+    with col2:
+        st.subheader("🔍 Conflict Analysis")
+        
+        if st.button("🚀 Check for Conflicts", type="primary", use_container_width=True):
+            new_booking = {
+                'Request_Date': new_request_date,
+                'Booking_Date': new_booking_date,
+                'Equipment_Category': new_category,
+                'Equipment_Type': new_type,
+                'Equipment_ID': new_equipment_id,
+                'Duration': new_duration,
+                'Shift': new_shift,
+                'Priority': new_priority,
+                'Project': new_project,
+                'Location': new_location,
+                'Lift_Item': new_lift_item,
             }
-        
-        selected_equip = st.selectbox("Specific Equipment (optional)", equip_options)
-        booking_date = st.date_input("Date", value=datetime(2026, 9, 1), min_value=datetime(2026, 8, 1))
-        
-        # Availability check
-        available_ids, _ = get_available_equipment(equipment_type, booking_date, service, bookings)
-        if selected_equip != 'Auto-select (best match)':
-            chosen_id = equip_details[selected_equip]['id']
-            if chosen_id in available_ids:
-                st.success(f"✅ {chosen_id} is available on {booking_date.strftime('%d %b %Y')}")
-            else:
-                st.error(f"❌ {chosen_id} is NOT available on {booking_date.strftime('%d %b %Y')}")
-        else:
-            if available_ids:
-                st.success(f"✅ {len(available_ids)} unit(s) available on {booking_date.strftime('%d %b %Y')}")
-            else:
-                st.error(f"❌ No {equipment_type} available on this date")
-    
-    with col2:
-        st.markdown("#### Job Details")
-        
-        items_map = {
-            'Crane': ['Hull Block Section', 'Engine Module', 'Structural Steel Module', 'Mega Block Section',
-                     'Accommodation Module', 'Pipe Spool', 'Anchor Chain', 'Mooring Winch',
-                     'Transformer Unit', 'Construction Materials', 'Workshop Equipment', 'Turret Assembly',
-                     'Helideck Module', 'Flare Tower Section', 'Riser Assembly', 'Offshore Platform Topside', 'Jacket Structure'],
-            'MEWP': ['Personnel Access Work', 'Inspection Work', 'Painting Work'],
-            'Cometto': ['Block Transportation', 'Module Transportation', 'Equipment Relocation'],
-            'Forklift': ['Steel Plates', 'Pipe Bundles', 'Welding Materials', 'PPE Supplies', 'Insulation Materials', 'Safety Equipment']
-        }
-        
-        lift_item = st.selectbox("Lift Item", items_map.get(equipment_category, ['General']))
-        load_weight = st.number_input("Load Weight (T)", min_value=0.1, max_value=15000.0, value=50.0)
-        duration = st.selectbox("Duration", ['Half Day (AM)', 'Half Day (PM)', 'Full Day', '2 Days', '3 Days', '5 Days', '7 Days'])
-        shift = st.selectbox("Shift", ['Day Shift (0700-1900)', 'Night Shift (1900-0700)'])
-        project = st.selectbox("Project", ['Project Alpha', 'Project Beta', 'Project Gamma', 'Project Delta', 'Project Echo', 'Project Foxtrot'])
-    
-    st.markdown("---")
-    
-    if st.button("🔍 Check Availability & Submit", type="primary", use_container_width=True):
-        st.markdown("---")
-        st.markdown("### Results")
-        
-        if selected_equip != 'Auto-select (best match)':
-            chosen = equip_details[selected_equip]
-            chosen_id = chosen['id']
-            max_swl = chosen['max_swl']
             
-            if max_swl and load_weight > max_swl:
-                st.error(f"❌ **REJECTED** — Load {load_weight}T exceeds {chosen_id} capacity ({max_swl:.0f}T)")
-                st.warning("Select a higher-capacity equipment or reduce load weight.")
+            conflicts, has_conflict = detect_conflicts(df, new_booking)
+            
+            if has_conflict:
+                st.error(f"⚠️ CONFLICT DETECTED! {len(conflicts)} overlapping booking(s) found.")
                 
-                # Show alternatives that CAN handle it
-                st.markdown("**Equipment that can handle this load:**")
-                suitable = reg[(reg['Equipment_Type'] == equipment_type) & (reg['Max_SWL'] >= load_weight)]
-                if len(suitable) > 0:
-                    for _, s in suitable.head(5).iterrows():
-                        avail_mark = "🟢" if s['Equipment_ID'] in available_ids else "🔴"
-                        risk = get_utilization_level(load_weight, s['Max_SWL'])
-                        st.write(f"{avail_mark} **{s['Equipment_ID']}** — SWL: {s['Max_SWL']:.0f}T — Risk: {risk} — {s['Location']}")
-                else:
-                    st.warning(f"No {equipment_type} can handle {load_weight}T. Try a different type.")
-            
-            elif chosen_id in available_ids:
-                risk = get_utilization_level(load_weight, max_swl)
-                st.success(f"✅ **APPROVED** — {chosen_id} available and can handle the load")
-                st.write(f"• **Equipment:** {chosen_id}")
-                st.write(f"• **Capacity:** {max_swl:.0f}T")
-                st.write(f"• **Load:** {load_weight}T")
-                st.write(f"• **Risk Level:** {risk}")
-                st.write(f"• **Location:** {chosen['location']}")
-                if risk == 'High':
-                    st.warning(f"⚠️ High risk — load exceeds 80% of SWL. Consider a larger crane.")
-            else:
-                st.error(f"❌ {chosen_id} is not available on {booking_date.strftime('%d %b %Y')}")
-                st.markdown("**Alternative dates:**")
-                for i in range(1, 8):
-                    alt_date = pd.to_datetime(booking_date) + timedelta(days=i)
-                    alt_avail, _ = get_available_equipment(equipment_type, alt_date, service, bookings)
-                    if chosen_id in alt_avail:
-                        st.write(f"• ✅ **{alt_date.strftime('%d %b %Y')}** ({alt_date.strftime('%A')})")
-        
-        else:
-            # Auto-select: only show equipment where SWL >= load weight
-            suitable = get_suitable_equipment(equipment_type, load_weight, booking_date)
-            
-            if len(suitable) == 0:
-                st.error(f"❌ No {equipment_type} can handle {load_weight}T load")
-                st.warning("Consider a different equipment type with higher capacity.")
-            else:
-                available_suitable = suitable[suitable['Available'] == True]
+                # Show conflict details
+                resolution_df = resolve_conflict(new_booking, conflicts)
                 
-                if len(available_suitable) > 0:
-                    st.success(f"✅ {len(available_suitable)} suitable unit(s) available (SWL ≥ {load_weight}T)")
-                    st.markdown("**Recommended (sorted by best fit):**")
-                    
-                    for idx, (_, eq) in enumerate(available_suitable.head(5).iterrows()):
-                        risk = get_utilization_level(load_weight, eq['Max_SWL'])
-                        if idx == 0:
-                            st.success(f"🎯 **Best: {eq['Equipment_ID']}** — SWL: {eq['Max_SWL']:.0f}T — Risk: {risk} — {eq['Location']}")
-                        else:
-                            st.write(f"• **{eq['Equipment_ID']}** — SWL: {eq['Max_SWL']:.0f}T — Risk: {risk} — {eq['Location']}")
-                else:
-                    st.warning(f"⚠️ Equipment exists but none available on {booking_date.strftime('%d %b %Y')}")
-                    st.markdown("**Try these dates:**")
-                    alt_dates = find_best_dates(equipment_type, booking_date)
-                    for alt in alt_dates[:3]:
-                        st.write(f"• ✅ **{alt['date'].strftime('%d %b %Y')}** — {alt['available_units']} unit(s)")
+                st.markdown("### Resolution Decision")
+                
+                for _, res in resolution_df.iterrows():
+                    if res['New_Booking_Wins']:
+                        st.success(f"✅ **{res['Resolution']}**")
+                        st.markdown(f"Your booking overrides **{res['Conflicting_Booking']}** "
+                                   f"(Priority: {res['Conflict_Priority']})")
+                    else:
+                        st.warning(f"❌ **{res['Resolution']}**")
+                        st.markdown(f"Existing booking **{res['Conflicting_Booking']}** "
+                                   f"(Priority: {res['Conflict_Priority']}) takes precedence.")
+                
+                st.markdown("### Conflicting Bookings Detail")
+                st.dataframe(resolution_df, use_container_width=True)
+                
+            else:
+                st.success("✅ NO CONFLICT! Equipment is available for the requested period.")
+                st.balloons()
+                
+                st.markdown("### Booking Summary")
+                summary_data = {
+                    'Field': ['Equipment', 'Unit ID', 'Date', 'Duration', 'Shift', 'Priority', 'Project', 'Location'],
+                    'Value': [new_type, new_equipment_id, str(new_booking_date), new_duration, 
+                             new_shift, new_priority, new_project, new_location]
+                }
+                st.table(pd.DataFrame(summary_data))
+
 
 # ============================================================
-# PAGE: AI RECOMMENDATION
+# PAGE: AI PREDICTION
 # ============================================================
-elif page == "🤖 AI Recommendation":
-    st.markdown("# 🤖 AI Recommendation")
-    st.caption("Describe your job — AI suggests the best equipment, checks capacity, and finds available dates")
+elif page == "🤖 AI Prediction":
+    st.header("🤖 AI-Powered Conflict Prediction")
+    st.markdown("Machine Learning model trained on historical booking data to predict conflict outcomes.")
+    
     st.markdown("---")
     
-    col1, col2 = st.columns(2, gap="large")
+    # Train model
+    with st.spinner("Training AI model..."):
+        model, encoders, accuracy, features, report = train_model(df)
     
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown("#### What do you need?")
-        
-        all_items = ['Hull Block Section', 'Engine Module', 'Structural Steel Module', 'Mega Block Section',
-             'Accommodation Module', 'Pipe Spool', 'Anchor Chain', 'Mooring Winch',
-             'Transformer Unit', 'Construction Materials', 'Workshop Equipment', 'Turret Assembly',
-             'Helideck Module', 'Flare Tower Section', 'Riser Assembly', 'Personnel Access Work',
-             'Steel Plates', 'Pipe Bundles', 'Safety Equipment', 'Insulation Materials',
-             'Welding Materials', 'PPE Supplies', 'Offshore Platform Topside', 'Jacket Structure',
-             'Inspection Work', 'Painting Work', 'Block Transportation', 'Module Transportation', 'Equipment Relocation']
-        
-        ai_lift = st.selectbox("Task / Lift Item", all_items)
-        ai_load = st.number_input("Load Weight (T)", min_value=0.1, max_value=15000.0, value=50.0, key="ai_wt")
-        ai_date = st.date_input("Preferred Date", value=datetime(2026, 9, 15), min_value=datetime(2026, 8, 1), key="ai_dt")
-        
-        get_rec = st.button("🤖 Get Recommendation", type="primary", use_container_width=True)
-    
+        st.metric("Model Accuracy", f"{accuracy*100:.1f}%")
     with col2:
-        st.markdown("#### Recommendations")
-        
-        if get_rec:
-            recs = recommend_equipment(ai_load, ai_lift)
-            
-            if recs:
-                best = recs[0]
-                risk = get_utilization_level(ai_load, best.get('max_swl'))
-                st.success(f"**Best Match: {best['equipment_id']}**")
-                st.write(f"**Type:** {best['type']}")
-                st.write(f"**Capacity:** {best['max_swl']:.0f}T" if best.get('max_swl') else f"**Capacity:** {best['capacity']}")
-                st.write(f"**Location:** {best['location']}")
-                st.write(f"**Risk Level:** {risk}")
-                st.write(f"**Reason:** {best['reason']}")
-                
-                # Availability
-                available, _ = get_available_equipment(best['type'], ai_date, service, bookings)
-                if best['equipment_id'] in available:
-                    st.success(f"📅 Available on {ai_date.strftime('%d %b %Y')}")
-                else:
-                    st.warning(f"⚠️ Not available on {ai_date.strftime('%d %b %Y')}")
-                    alt_dates = find_best_dates(best['type'], ai_date, 5)
-                    if alt_dates:
-                        st.write("**Nearest dates:**")
-                        for alt in alt_dates[:3]:
-                            st.write(f"• {alt['date'].strftime('%d %b %Y')} — {alt['available_units']} units")
-                
-                # Alternatives
-                if len(recs) > 1:
-                    st.markdown("---")
-                    st.markdown("**Alternatives:**")
-                    for i, rec in enumerate(recs[1:], 1):
-                        with st.expander(f"Option {i+1}: {rec['equipment_id']} ({rec['type']})"):
-                            cap_display = f"{rec['max_swl']:.0f}T" if rec.get('max_swl') else str(rec['capacity'])
-                            alt_risk = get_utilization_level(ai_load, rec.get('max_swl'))
-                            st.write(f"Capacity: {cap_display}")
-                            st.write(f"Location: {rec['location']}")
-                            st.write(f"Risk: {alt_risk}")
-                            st.write(f"Reason: {rec['reason']}")
-                
-                # Safety
-                st.markdown("---")
-                st.markdown("**Safety Assessment:**")
-                if ai_load > 200:
-                    st.warning("🔶 Heavy Lift — Heavy Lift Specialist + Lift Plan required")
-                elif ai_load > 50:
-                    st.info("🔵 Medium Lift — Advanced cert + Standard Lift Plan")
-                else:
-                    st.success("✅ Standard Lift — Normal protocols")
-            else:
-                st.warning("No suitable equipment found. Adjust parameters.")
-        else:
-            st.info("Fill in requirements and click Get Recommendation.")
-
-# ============================================================
-# PAGE: CONFLICT ALERTS (FIXED - Risk Levels instead of %)
-# ============================================================
-elif page == "⚠️ Conflict Alerts":
-    st.markdown("# ⚠️ Conflict Alerts")
-    st.caption("Booking conflicts, maintenance overlaps, and risk monitoring")
-    st.markdown("---")
-    
-    tab1, tab2, tab3 = st.tabs(["Active Conflicts", "Upcoming Maintenance", "Risk Warnings"])
-    
-    with tab1:
-        st.markdown("#### Booking vs Maintenance Conflicts")
-        
-        conflicts = []
-        active_bk = bookings[bookings['Status'].isin(['Confirmed', 'Pending'])]
-        
-        for _, bk in active_bk.iterrows():
-            svc_match = service[
-                (service['Service_Date'] == bk['Booking_Date']) & 
-                (service['Equipment_ID'] == bk['Equipment_ID'])
-            ]
-            if not svc_match.empty:
-                conflicts.append({
-                    'Booking': bk['Booking_ID'],
-                    'Equipment': bk['Equipment_ID'],
-                    'Type': bk['Equipment_Type'],
-                    'Date': bk['Booking_Date'].strftime('%d %b %Y'),
-                    'Service': svc_match.iloc[0]['Service_Type'],
-                    'Action': 'Reschedule required'
-                })
-        
-        if conflicts:
-            st.error(f"🔴 {len(conflicts)} active conflict(s) found")
-            st.dataframe(pd.DataFrame(conflicts), use_container_width=True, hide_index=True)
-        else:
-            st.success("✅ No conflicts — all bookings clear of maintenance")
-        
-        st.markdown("---")
-        st.markdown("#### Historical Conflicts")
-        hist_conflicts = bookings[bookings['Service_Conflict'] == True]
-        if len(hist_conflicts) > 0:
-            st.warning(f"{len(hist_conflicts)} past bookings had conflicts")
-            st.dataframe(
-                hist_conflicts[['Booking_ID', 'Equipment_ID', 'Booking_Date', 'Status', 'Status_Reason']].head(15),
-                use_container_width=True, hide_index=True
-            )
-    
-    with tab2:
-        st.markdown("#### Next 14 Days Maintenance")
-        today = pd.to_datetime('2026-08-07')
-        upcoming = service[
-            (service['Service_Date'] >= today) & 
-            (service['Service_Date'] <= today + timedelta(days=14))
-        ].sort_values('Service_Date')
-        
-        if not upcoming.empty:
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("This Week", len(upcoming[upcoming['Service_Date'] <= today + timedelta(days=7)]))
-            with col2:
-                st.metric("Next Week", len(upcoming[upcoming['Service_Date'] > today + timedelta(days=7)]))
-            with col3:
-                st.metric("Equipment Affected", upcoming['Equipment_ID'].nunique())
-            
-            st.dataframe(
-                upcoming[['Equipment_ID', 'Equipment_Type', 'Location', 'Service_Date', 'Service_Type', 'Service_Duration_Hours']],
-                use_container_width=True, hide_index=True
-            )
-        else:
-            st.success("No maintenance in next 14 days.")
-    
-    with tab3:
-        st.markdown("#### Risk Warnings")
-        st.caption("Industry standard: Safe working limit is 80% of SWL. Bookings above 80% are flagged as High risk.")
-        st.markdown("---")
-        
-        # Show HIGH risk bookings (>80% of SWL)
-        high_risk_bookings = bookings[
-            (bookings['Risk_Level'] == 'High') & 
-            (bookings['Status'].isin(['Confirmed', 'Pending']))
-        ].sort_values('Crane_Utilization_Pct', ascending=False).copy()
-        
-        if not high_risk_bookings.empty:
-            st.error(f"🔴 {len(high_risk_bookings)} HIGH risk bookings (load exceeds 80% of SWL)")
-            
-            display_df = high_risk_bookings[['Booking_ID', 'Equipment_ID', 'Equipment_Type', 'Ton_Capacity', 'Load_Weight_T', 'Risk_Level', 'Lift_Item', 'Location']].copy()
-            display_df.columns = ['Booking', 'Equipment', 'Type', 'SWL (T)', 'Load (T)', 'Risk', 'Lift Item', 'Location']
-            
-            st.dataframe(
-                display_df.head(20),
-                use_container_width=True, hide_index=True
-            )
-            
-            st.markdown("---")
-            st.info("💡 **Recommendation:** For High risk bookings, consider using a larger capacity equipment to maintain safety margin below 80% SWL.")
-        else:
-            st.success("✅ No high risk bookings for active jobs")
-        
-        st.markdown("---")
-        
-        # Summary of all risk levels
-        st.markdown("#### Risk Distribution (Active Bookings)")
-        active_only = bookings[bookings['Status'].isin(['Confirmed', 'Pending'])]
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            low_count = len(active_only[active_only['Risk_Level'] == 'Low'])
-            st.metric("🟢 Low Risk (<50%)", f"{low_count}")
-        with col2:
-            med_count = len(active_only[active_only['Risk_Level'] == 'Medium'])
-            st.metric("🟡 Medium Risk (50-80%)", f"{med_count}")
-        with col3:
-            high_count = len(active_only[active_only['Risk_Level'] == 'High'])
-            st.metric("🔴 High Risk (>80%)", f"{high_count}")
-        
-        st.markdown("---")
-        st.markdown("#### Rejection Analysis")
-        st.caption("Common reasons bookings get rejected")
-        rejected = bookings[bookings['Status'] == 'Rejected']
-        reason_counts = rejected['Status_Reason'].value_counts().head(8)
-        st.bar_chart(reason_counts)
-
-# ============================================================
-# PAGE: SERVICE SCHEDULE
-# ============================================================
-elif page == "📅 Service Schedule":
-    st.markdown("# 📅 Service Schedule")
-    st.caption("2026 maintenance schedule for all yard equipment")
-    st.markdown("---")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        f_cat = st.selectbox("Category", ['All'] + sorted(service['Equipment_Category'].unique().tolist()), key="svc_cat")
-    with col2:
-        if f_cat != 'All':
-            opts = sorted(service[service['Equipment_Category'] == f_cat]['Equipment_Type'].unique().tolist())
-        else:
-            opts = sorted(service['Equipment_Type'].unique().tolist())
-        f_type = st.selectbox("Type", ['All'] + opts, key="svc_type")
+        st.metric("Training Records", len(df))
     with col3:
-        f_status = st.selectbox("Status", ['All', 'Completed', 'Scheduled'], key="svc_status")
-    with col4:
-        months = ['All'] + [f"{i:02d} - {datetime(2026,i,1).strftime('%B')}" for i in range(1, 13)]
-        f_month = st.selectbox("Month", months, key="svc_month")
-    
-    filtered = service.copy()
-    if f_cat != 'All':
-        filtered = filtered[filtered['Equipment_Category'] == f_cat]
-    if f_type != 'All':
-        filtered = filtered[filtered['Equipment_Type'] == f_type]
-    if f_status != 'All':
-        filtered = filtered[filtered['Service_Status'] == f_status]
-    if f_month != 'All':
-        m = int(f_month.split(' - ')[0])
-        filtered = filtered[filtered['Service_Date'].dt.month == m]
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Records", f"{len(filtered):,}")
-    with col2:
-        st.metric("Completed", f"{len(filtered[filtered['Service_Status'] == 'Completed']):,}")
-    with col3:
-        st.metric("Scheduled", f"{len(filtered[filtered['Service_Status'] == 'Scheduled']):,}")
-    with col4:
-        st.metric("Equipment", f"{filtered['Equipment_ID'].nunique()}")
+        st.metric("Features Used", len(features))
     
     st.markdown("---")
-    st.dataframe(
-        filtered.sort_values('Service_Date'),
-        use_container_width=True,
-        hide_index=True,
-        height=600
-    )
+    
+    # Classification Report
+    st.subheader("📊 Model Performance Report")
+    
+    report_df = pd.DataFrame(report).transpose()
+    st.dataframe(report_df.round(3), use_container_width=True)
+    
+    st.markdown("---")
+    
+    # Feature Importance
+    st.subheader("🎯 Feature Importance")
+    importance_df = pd.DataFrame({
+        'Feature': features,
+        'Importance': model.feature_importances_
+    }).sort_values('Importance', ascending=False)
+    
+    st.bar_chart(importance_df.set_index('Feature')['Importance'])
+    
+    st.markdown("---")
+    
+    # Prediction Interface
+    st.subheader("🔮 Make a Prediction")
+    st.markdown("Input booking parameters to predict whether it will win equipment allocation.")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        pred_priority = st.select_slider("Priority", options=['Low', 'Medium', 'High', 'Urgent'], value='Medium')
+        pred_duration = st.selectbox("Duration", list(DURATION_MAP.keys()), key='pred_duration')
+        pred_lead_time = st.slider("Lead Time (days)", 1, 14, 5)
+        pred_wind = st.slider("Wind Speed (knots)", 0, 45, 10)
+        pred_utilization = st.slider("Crane Utilization %", 20, 100, 60)
+    
+    with col2:
+        pred_category = st.selectbox("Equipment Category", df['Equipment_Category'].unique(), key='pred_cat')
+        pred_type = st.selectbox("Equipment Type", 
+                                 df[df['Equipment_Category'] == pred_category]['Equipment_Type'].unique(), 
+                                 key='pred_type')
+        pred_shift = st.selectbox("Shift", ['Day Shift (0700-1900)', 'Night Shift (1900-0700)'], key='pred_shift')
+        pred_project = st.selectbox("Project", sorted(df['Project'].unique()), key='pred_project')
+        pred_weather = st.selectbox("Weather", df['Weather_Condition'].unique(), key='pred_weather')
+    
+    if st.button("🔮 Predict Outcome", type="primary", use_container_width=True):
+        # Encode inputs
+        try:
+            input_data = pd.DataFrame([{
+                'Priority_Score': PRIORITY_SCORES[pred_priority],
+                'Duration_Days': DURATION_MAP[pred_duration],
+                'Lead_Time': pred_lead_time,
+                'Equipment_Category_Enc': encoders['equipment_cat'].transform([pred_category])[0],
+                'Equipment_Type_Enc': encoders['equipment_type'].transform([pred_type])[0],
+                'Shift_Enc': encoders['shift'].transform([pred_shift])[0],
+                'Project_Enc': encoders['project'].transform([pred_project])[0],
+                'Weather_Enc': encoders['weather'].transform([pred_weather])[0],
+                'Wind_Speed_Knots': pred_wind,
+                'Crane_Utilization_Pct': pred_utilization,
+            }])
+            
+            prediction = model.predict(input_data)[0]
+            probability = model.predict_proba(input_data)[0]
+            
+            st.markdown("### Prediction Result")
+            
+            if prediction == 1:
+                st.success(f"✅ **WINS EQUIPMENT** (Confidence: {probability[1]*100:.1f}%)")
+                st.progress(probability[1])
+            else:
+                st.error(f"❌ **DOES NOT WIN EQUIPMENT** (Confidence: {probability[0]*100:.1f}%)")
+                st.progress(probability[0])
+                
+                st.markdown("**💡 Recommendation:** Consider increasing priority or adjusting the schedule.")
+        except Exception as e:
+            st.error(f"Prediction error: {str(e)}")
+
+
+# ============================================================
+# PAGE: ANALYTICS
+# ============================================================
+elif page == "📈 Analytics":
+    st.header("📈 Equipment Utilization Analytics")
+    
+    # Equipment utilization
+    st.subheader("Equipment Utilization by Type")
+    util_by_type = df.groupby('Equipment_Type')['Crane_Utilization_Pct'].mean().sort_values(ascending=False)
+    st.bar_chart(util_by_type)
+    
+    st.markdown("---")
+    
+    # Conflicts by equipment type
+    if 'Has_Conflict' in df.columns:
+        st.subheader("Conflicts by Equipment Type")
+        conflict_by_type = df[df['Has_Conflict'] == 'Yes'].groupby('Equipment_Type').size().sort_values(ascending=False)
+        if not conflict_by_type.empty:
+            st.bar_chart(conflict_by_type)
+        else:
+            st.info("No conflicts recorded in the dataset.")
+    
+    st.markdown("---")
+    
+    # Priority distribution by project
+    st.subheader("Priority Distribution by Project")
+    priority_project = pd.crosstab(df['Project'], df['Priority'])
+    st.dataframe(priority_project, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # Weather impact
+    st.subheader("Weather Impact on Operations")
+    weather_status = pd.crosstab(df['Weather_Condition'], df['Status'])
+    st.dataframe(weather_status, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # Duration analysis
+    st.subheader("Booking Duration Distribution")
+    duration_counts = df['Duration'].value_counts()
+    st.bar_chart(duration_counts)
+
+
+# ============================================================
+# FOOTER
+# ============================================================
+st.markdown("---")
+st.markdown(
+    "<div style='text-align: center; color: #888;'>"
+    "🏗️ Equipment Booking AI System | Shipyard Operations | "
+    f"Built with Streamlit | {datetime.now().strftime('%Y')}"
+    "</div>",
+    unsafe_allow_html=True
+)
 
