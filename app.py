@@ -88,7 +88,7 @@ PRIORITY_SCORES = {"Low": 1, "Medium": 2, "High": 3, "Urgent": 4}
 @st.cache_data
 def load_data():
     """Load the equipment bookings dataset."""
-    df = pd.read_excel('data/Equipment_Bookings_AI_Training.xlsx')
+    df = pd.read_excel('Equipment_Bookings_AI_Training.xlsx')
     return df
 
 
