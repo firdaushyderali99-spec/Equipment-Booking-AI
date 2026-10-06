@@ -38,14 +38,6 @@ st.markdown("""
         text-align: center;
         margin-bottom: 2rem;
     }
-    .score-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 15px;
-        color: white;
-        text-align: center;
-        margin: 10px 0;
-    }
     .score-win {
         background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
         padding: 15px;
@@ -59,6 +51,55 @@ st.markdown("""
         border-radius: 10px;
         color: white;
         text-align: center;
+    }
+
+    /* ---- Professional Sidebar Navigation ---- */
+    section[data-testid="stSidebar"] {
+        background-color: #1a1a2e;
+    }
+    section[data-testid="stSidebar"] .stMarkdown h1,
+    section[data-testid="stSidebar"] .stMarkdown h2,
+    section[data-testid="stSidebar"] .stMarkdown h3,
+    section[data-testid="stSidebar"] .stMarkdown p,
+    section[data-testid="stSidebar"] .stMarkdown span,
+    section[data-testid="stSidebar"] .stMarkdown li {
+        color: #e0e0e0 !important;
+    }
+
+    /* Nav button styling */
+    section[data-testid="stSidebar"] .stButton > button {
+        width: 100%;
+        text-align: left;
+        padding: 12px 20px;
+        margin: 4px 0;
+        border: none;
+        border-radius: 8px;
+        background-color: transparent;
+        color: #b0b0c0 !important;
+        font-size: 15px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }
+    section[data-testid="stSidebar"] .stButton > button:hover {
+        background-color: #16213e;
+        color: #ffffff !important;
+    }
+
+    /* Active nav button */
+    section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #0f3460 0%, #533483 100%);
+        color: #ffffff !important;
+        border-left: 4px solid #e94560;
+        font-weight: 600;
+    }
+
+    /* Sidebar info cards */
+    section[data-testid="stSidebar"] .stAlert {
+        background-color: #16213e;
+        border: 1px solid #0f3460;
+        color: #e0e0e0;
+        border-radius: 8px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -93,13 +134,11 @@ PHASE_SCORES = {
 
 @st.cache_data
 def load_data():
-    """Load the equipment bookings dataset."""
     df = pd.read_excel('Equipment_Bookings_AI_Training.xlsx', engine='openpyxl')
     return df
 
 
 def calculate_end_date(booking_date, duration):
-    """Calculate end date based on booking date and duration."""
     days = DURATION_MAP.get(duration, 1)
     if days >= 1:
         return booking_date + timedelta(days=int(days) - 1)
@@ -107,9 +146,7 @@ def calculate_end_date(booking_date, duration):
 
 
 def suggest_equipment(df, category, load_weight):
-    """Suggest equipment type and unit based on category and load weight."""
     available = df[df['Equipment_Category'] == category].copy()
-
     if 'Ton_Capacity' in available.columns and load_weight > 0:
         suitable = available[available['Ton_Capacity'] >= load_weight * 1.2]
         if suitable.empty:
@@ -118,13 +155,11 @@ def suggest_equipment(df, category, load_weight):
             suitable = available
     else:
         suitable = available
-
     suggested_types = sorted(suitable['Equipment_Type'].unique().tolist())
     return suitable, suggested_types
 
 
 def detect_conflicts(df, new_booking):
-    """Detect conflicts between a new booking and existing bookings."""
     new_start = pd.to_datetime(new_booking['Booking_Date'])
     new_end = calculate_end_date(new_start, new_booking['Duration'])
     new_equipment = new_booking['Equipment_ID']
@@ -157,24 +192,17 @@ def detect_conflicts(df, new_booking):
 # ============================================================
 
 def calculate_ai_priority_score(booking, df, equipment_info):
-    """
-    Calculate composite AI Priority Score (5-25).
-    Score = Project Criticality + Schedule Impact + Urgency + Equipment Suitability + Location Efficiency
-    """
     score_breakdown = {}
 
-    # --- 1. PROJECT CRITICALITY (1-5) ---
+    # 1. PROJECT CRITICALITY (1-5)
     phase = booking.get('Project_Phase', 'Fabrication')
     project_criticality = PHASE_SCORES.get(phase, 2)
     score_breakdown['Project Criticality'] = {
-        'score': project_criticality,
-        'max': 5,
-        'reason': f"{phase} phase"
+        'score': project_criticality, 'max': 5, 'reason': f"{phase} phase"
     }
 
-    # --- 2. SCHEDULE IMPACT (1-5) ---
+    # 2. SCHEDULE IMPACT (1-5)
     lead_time = (pd.to_datetime(booking['Booking_Date']) - pd.to_datetime(booking['Request_Date'])).days
-
     if lead_time <= 1:
         schedule_impact = 5
     elif lead_time <= 3:
@@ -185,31 +213,23 @@ def calculate_ai_priority_score(booking, df, equipment_info):
         schedule_impact = 2
     else:
         schedule_impact = 1
-
     if booking.get('Rescheduled', False):
         schedule_impact = min(5, schedule_impact + 1)
-
     score_breakdown['Schedule Impact'] = {
-        'score': schedule_impact,
-        'max': 5,
-        'reason': f"Lead time: {lead_time} days"
+        'score': schedule_impact, 'max': 5, 'reason': f"Lead time: {lead_time} days"
     }
 
-    # --- 3. URGENCY (1-5) ---
+    # 3. URGENCY (1-5)
     priority = booking.get('Priority', 'Medium')
     urgency_map = {'Urgent': 5, 'High': 4, 'Medium': 3, 'Low': 2}
     urgency = urgency_map.get(priority, 3)
-
     if priority == 'Low' and lead_time > 10:
         urgency = 1
-
     score_breakdown['Urgency'] = {
-        'score': urgency,
-        'max': 5,
-        'reason': f"{priority} priority"
+        'score': urgency, 'max': 5, 'reason': f"{priority} priority"
     }
 
-    # --- 4. EQUIPMENT SUITABILITY (1-5) ---
+    # 4. EQUIPMENT SUITABILITY (1-5)
     load_weight = booking.get('Load_Weight', 0)
     equipment_capacity = 100
     if isinstance(equipment_info, pd.Series) and 'Ton_Capacity' in equipment_info.index:
@@ -239,12 +259,11 @@ def calculate_ai_priority_score(booking, df, equipment_info):
 
     pct = (load_weight / max(equipment_capacity, 1)) * 100
     score_breakdown['Equipment Suitability'] = {
-        'score': equipment_suitability,
-        'max': 5,
+        'score': equipment_suitability, 'max': 5,
         'reason': f"{load_weight}T on {equipment_capacity}T capacity ({pct:.0f}%)"
     }
 
-    # --- 5. LOCATION EFFICIENCY (1-5) ---
+    # 5. LOCATION EFFICIENCY (1-5)
     booking_location = booking.get('Location', '')
     equipment_id = booking.get('Equipment_ID', '')
 
@@ -263,18 +282,15 @@ def calculate_ai_priority_score(booking, df, equipment_info):
             loc_reason = f"Equipment nearby ({last_location} → {booking_location})"
         else:
             location_efficiency = 2
-            loc_reason = f"Equipment at {last_location}, needs relocation to {booking_location}"
+            loc_reason = f"Relocation needed ({last_location} → {booking_location})"
     else:
         location_efficiency = 3
-        loc_reason = f"No prior location data"
+        loc_reason = "No prior location data"
 
     score_breakdown['Location Efficiency'] = {
-        'score': location_efficiency,
-        'max': 5,
-        'reason': loc_reason
+        'score': location_efficiency, 'max': 5, 'reason': loc_reason
     }
 
-    # --- TOTAL ---
     total_score = (project_criticality + schedule_impact + urgency +
                    equipment_suitability + location_efficiency)
 
@@ -282,14 +298,11 @@ def calculate_ai_priority_score(booking, df, equipment_info):
 
 
 def resolve_conflict_ai(new_booking, conflicts, df):
-    """Resolve conflict using composite AI Priority Score."""
     eq_rows = df[df['Equipment_ID'] == new_booking['Equipment_ID']]
     eq_info_new = eq_rows.iloc[0] if len(eq_rows) > 0 else {}
-
     new_score, new_breakdown = calculate_ai_priority_score(new_booking, df, eq_info_new)
 
     results = []
-
     for _, conflict in conflicts.iterrows():
         conflict_booking = {
             'Request_Date': conflict['Request_Date'],
@@ -302,10 +315,8 @@ def resolve_conflict_ai(new_booking, conflicts, df):
             'Project_Phase': conflict.get('Project_Phase', 'Fabrication'),
             'Rescheduled': conflict.get('Rescheduled', False),
         }
-
         eq_rows_c = df[df['Equipment_ID'] == conflict['Equipment_ID']]
         eq_info_conflict = eq_rows_c.iloc[0] if len(eq_rows_c) > 0 else {}
-
         conflict_score, conflict_breakdown = calculate_ai_priority_score(conflict_booking, df, eq_info_conflict)
 
         if new_score > conflict_score:
@@ -316,10 +327,10 @@ def resolve_conflict_ai(new_booking, conflicts, df):
             new_wins = False
         else:
             if pd.to_datetime(new_booking['Request_Date']) <= pd.to_datetime(conflict['Request_Date']):
-                resolution = f"TIED ({new_score}/25) — First-Come-First-Served: You requested first"
+                resolution = f"TIED ({new_score}/25) — You requested first"
                 new_wins = True
             else:
-                resolution = f"TIED ({conflict_score}/25) — First-Come-First-Served: Existing requested first"
+                resolution = f"TIED ({conflict_score}/25) — Existing requested first"
                 new_wins = False
 
         results.append({
@@ -338,22 +349,21 @@ def resolve_conflict_ai(new_booking, conflicts, df):
 
 
 def display_score_breakdown(label, score, breakdown):
-    """Display a visual score breakdown card."""
-    st.markdown(f"#### {label} — Score: **{score}/25**")
-
+    st.markdown(f"**{label} — Total: {score}/25**")
+    breakdown_data = []
     for factor, details in breakdown.items():
-        col_a, col_b, col_c = st.columns([2, 3, 3])
-        with col_a:
-            st.markdown(f"**{factor}**")
-        with col_b:
-            st.progress(details['score'] / details['max'])
-        with col_c:
-            st.markdown(f"**{details['score']}/{details['max']}** — {details['reason']}")
+        bar = "█" * details['score'] + "░" * (details['max'] - details['score'])
+        breakdown_data.append({
+            'Factor': factor,
+            'Score': f"{details['score']}/{details['max']}",
+            'Bar': bar,
+            'Reason': details['reason']
+        })
+    st.dataframe(pd.DataFrame(breakdown_data), use_container_width=True, hide_index=True)
 
 
 @st.cache_resource
 def train_model(df):
-    """Train ML model for conflict resolution prediction."""
     df_model = df.copy()
     df_model['Priority_Score'] = df_model['Priority'].map(PRIORITY_SCORES)
     df_model['Duration_Days'] = df_model['Duration'].map(DURATION_MAP)
@@ -385,12 +395,10 @@ def train_model(df):
 
     X = df_model[features].fillna(0)
     y = df_model['Target']
-
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     model = GradientBoostingClassifier(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
-
     y_pred = model.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
 
@@ -406,52 +414,90 @@ def train_model(df):
 
 
 # ============================================================
-# MAIN APP
+# SIDEBAR - PROFESSIONAL NAVIGATION
 # ============================================================
 
-st.markdown('<div class="main-header">🏗️ Equipment Booking AI</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Intelligent Conflict Detection & Resolution System for Shipyard Operations</div>', unsafe_allow_html=True)
+# Initialize page state
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = 'Dashboard'
 
-# Sidebar
 with st.sidebar:
-    st.title("🏗️ Navigation")
+    st.markdown("## 🏗️ Equipment AI")
+    st.markdown("##### Shipyard Booking System")
     st.markdown("---")
 
-    page = st.radio(
-        "Select Module",
-        ["📊 Dashboard", "📋 Booking Manager", "🤖 Booking", "📈 Analytics"],
-        index=0
-    )
+    # Navigation buttons
+    nav_items = {
+        'Dashboard': '📊  Dashboard',
+        'Booking Manager': '📋  Booking Manager',
+        'Booking': '🔧  Booking',
+        'Analytics': '📈  Analytics',
+    }
+
+    for key, label in nav_items.items():
+        is_active = st.session_state.current_page == key
+        if st.button(
+            label,
+            key=f"nav_{key}",
+            type="primary" if is_active else "secondary",
+            use_container_width=True
+        ):
+            st.session_state.current_page = key
+            st.rerun()
 
     st.markdown("---")
-    st.markdown("### System Info")
-    st.info(f"📅 Date: {datetime.now().strftime('%Y-%m-%d')}")
-    st.info("🔄 Model: Gradient Boosting")
 
 # Load data
 try:
     df = load_data()
-    st.sidebar.success(f"📦 Loaded: {len(df)} bookings")
 except Exception as e:
     st.error(f"⚠️ Error loading data: {e}")
     st.info("Please ensure 'Equipment_Bookings_AI_Training.xlsx' is in the repo root.")
     st.stop()
 
 # Load AI model
-with st.sidebar:
-    try:
-        model, encoders, accuracy, features, report = train_model(df)
-        st.success(f"🤖 AI Model: {accuracy*100:.1f}% accuracy")
-    except Exception as e:
-        model = None
-        st.warning("⚠️ AI model unavailable")
+try:
+    model, encoders, accuracy, features, report = train_model(df)
+except Exception as e:
+    model = None
+    accuracy = 0
 
+# Sidebar system info
+with st.sidebar:
+    st.markdown("##### System Status")
+    st.markdown(f"""
+    <div style="background-color:#16213e; padding:12px; border-radius:8px; margin:6px 0;">
+        <span style="color:#8a8aa0; font-size:12px;">DATE</span><br>
+        <span style="color:#ffffff; font-size:14px;">{datetime.now().strftime('%d %b %Y')}</span>
+    </div>
+    <div style="background-color:#16213e; padding:12px; border-radius:8px; margin:6px 0;">
+        <span style="color:#8a8aa0; font-size:12px;">RECORDS</span><br>
+        <span style="color:#ffffff; font-size:14px;">{len(df):,} bookings</span>
+    </div>
+    <div style="background-color:#16213e; padding:12px; border-radius:8px; margin:6px 0;">
+        <span style="color:#8a8aa0; font-size:12px;">EQUIPMENT</span><br>
+        <span style="color:#ffffff; font-size:14px;">{df['Equipment_ID'].nunique()} units</span>
+    </div>
+    <div style="background-color:#16213e; padding:12px; border-radius:8px; margin:6px 0;">
+        <span style="color:#8a8aa0; font-size:12px;">AI MODEL</span><br>
+        <span style="color:#38ef7d; font-size:14px;">● Active — {accuracy*100:.1f}% accuracy</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown(
+        '<div style="text-align:center; color:#555; font-size:11px;">v2.0 — AI Priority Scoring</div>',
+        unsafe_allow_html=True
+    )
+
+page = st.session_state.current_page
 
 # ============================================================
 # PAGE: DASHBOARD
 # ============================================================
-if page == "📊 Dashboard":
-    st.header("📊 Operations Dashboard")
+if page == "Dashboard":
+    st.markdown('<div class="main-header">📊 Operations Dashboard</div>', unsafe_allow_html=True)
+    st.markdown("")
 
     col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -474,28 +520,24 @@ if page == "📊 Dashboard":
     st.markdown("---")
 
     col1, col2 = st.columns(2)
-
     with col1:
         st.subheader("Bookings by Equipment Category")
         st.bar_chart(df['Equipment_Category'].value_counts())
-
     with col2:
         st.subheader("Bookings by Priority")
         st.bar_chart(df['Priority'].value_counts())
 
     col1, col2 = st.columns(2)
-
     with col1:
         st.subheader("Status Distribution")
         st.bar_chart(df['Status'].value_counts())
-
     with col2:
         st.subheader("Bookings by Project")
         st.bar_chart(df['Project'].value_counts())
 
     if 'Conflict_Resolution' in df.columns:
         st.markdown("---")
-        st.subheader("⚠️ Conflict Resolution Summary")
+        st.subheader("Conflict Resolution Summary")
         resolution_counts = df[df['Conflict_Resolution'] != 'No Conflict']['Conflict_Resolution'].value_counts()
         if not resolution_counts.empty:
             st.dataframe(resolution_counts.reset_index().rename(
@@ -506,11 +548,11 @@ if page == "📊 Dashboard":
 # ============================================================
 # PAGE: BOOKING MANAGER
 # ============================================================
-elif page == "📋 Booking Manager":
-    st.header("📋 Booking Manager")
+elif page == "Booking Manager":
+    st.markdown('<div class="main-header">📋 Booking Manager</div>', unsafe_allow_html=True)
+    st.markdown("")
 
     col1, col2, col3, col4 = st.columns(4)
-
     with col1:
         filter_category = st.multiselect("Equipment Category", sorted(df['Equipment_Category'].unique()))
     with col2:
@@ -543,15 +585,14 @@ elif page == "📋 Booking Manager":
 
 
 # ============================================================
-# PAGE: BOOKING (UNIFIED WITH AI PRIORITY SCORE)
+# PAGE: BOOKING (UNIFIED)
 # ============================================================
-elif page == "🤖 Booking":
-    st.header("🤖 Equipment Booking")
-    st.markdown("Submit a booking request. AI will suggest equipment, detect conflicts, and evaluate priority using a **5-factor scoring system**.")
+elif page == "Booking":
+    st.markdown('<div class="main-header">🔧 Equipment Booking</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">AI-powered booking with 5-factor priority scoring</div>', unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # --- BOOKING FORM ---
     col1, col2 = st.columns([1, 1])
 
     with col1:
@@ -561,8 +602,6 @@ elif page == "🤖 Booking":
         book_booking_date = st.date_input("Booking Date", datetime.now() + timedelta(days=3), key='book_date')
 
         book_project = st.selectbox("Project", sorted(df['Project'].unique()), key='book_proj')
-
-        # Project Phase
         phases = list(PHASE_SCORES.keys())
         book_phase = st.selectbox("Project Phase", phases, key='book_phase')
 
@@ -571,11 +610,10 @@ elif page == "🤖 Booking":
 
         book_category = st.selectbox("Equipment Category", sorted(df['Equipment_Category'].unique()), key='book_cat')
 
-        # AI suggests equipment based on category and weight
         suitable_df, suggested_types = suggest_equipment(df, book_category, book_load_weight)
 
         if suggested_types:
-            st.markdown("💡 *AI Suggested equipment based on your load weight:*")
+            st.markdown("💡 *AI Suggested based on load weight:*")
             book_type = st.selectbox("Equipment Type (AI Suggested)", suggested_types, key='book_type')
 
             suggested_units = sorted(suitable_df[suitable_df['Equipment_Type'] == book_type]['Equipment_ID'].unique().tolist())
@@ -585,20 +623,18 @@ elif page == "🤖 Booking":
                 for _, row in unit_capacities.iterrows():
                     cap = f" ({row['Ton_Capacity']}T)" if pd.notna(row['Ton_Capacity']) else ""
                     unit_options.append(f"{row['Equipment_ID']}{cap}")
-
                 book_unit_display = st.selectbox("Equipment Unit (AI Suggested)", unit_options, key='book_unit')
                 book_id = book_unit_display.split(" (")[0]
             else:
                 book_id = st.selectbox("Equipment Unit", sorted(df[df['Equipment_Type'] == book_type]['Equipment_ID'].unique()), key='book_unit2')
         else:
-            st.warning("⚠️ No suitable equipment found for this weight. Showing all options.")
+            st.warning("⚠️ No suitable equipment for this weight. Showing all.")
             all_types = sorted(df[df['Equipment_Category'] == book_category]['Equipment_Type'].unique())
             book_type = st.selectbox("Equipment Type", all_types, key='book_type_all')
             book_id = st.selectbox("Equipment Unit", sorted(df[df['Equipment_Type'] == book_type]['Equipment_ID'].unique()), key='book_unit_all')
 
         book_duration = st.selectbox("Duration", list(DURATION_MAP.keys()), key='book_dur')
         book_priority = st.selectbox("Priority", ['Low', 'Medium', 'High', 'Urgent'], key='book_pri')
-
         book_locations = sorted(df['Location'].unique().tolist())
         book_location = st.selectbox("Location", book_locations, key='book_loc')
 
@@ -606,7 +642,6 @@ elif page == "🤖 Booking":
         st.subheader("🤖 AI Evaluation")
 
         if st.button("📋 Submit Booking Request", type="primary", use_container_width=True):
-            # Build booking object
             new_booking = {
                 'Request_Date': book_request_date,
                 'Booking_Date': book_booking_date,
@@ -627,11 +662,10 @@ elif page == "🤖 Booking":
 
             lead_time = (pd.to_datetime(book_booking_date) - pd.to_datetime(book_request_date)).days
 
-            # Booking Summary
             st.markdown("### 📋 Booking Summary")
             summary = {
-                'Field': ['Project', 'Phase', 'Lift Item', 'Load Weight', 'Equipment', 'Unit ID',
-                          'Booking Date', 'Duration', 'Priority', 'Location', 'Lead Time'],
+                'Field': ['Project', 'Phase', 'Lift Item', 'Load Weight', 'Equipment', 'Unit',
+                          'Date', 'Duration', 'Priority', 'Location', 'Lead Time'],
                 'Value': [book_project, book_phase, book_lift_item, f"{book_load_weight} T",
                           book_type, book_id, str(book_booking_date), book_duration,
                           book_priority, book_location, f"{lead_time} days"]
@@ -640,31 +674,25 @@ elif page == "🤖 Booking":
 
             st.markdown("---")
 
-            # Check for conflicts
             conflicts, has_conflict = detect_conflicts(df, new_booking)
 
             if has_conflict:
-                st.error(f"⚠️ **CONFLICT DETECTED** — {len(conflicts)} existing booking(s) overlap with your request.")
+                st.error(f"⚠️ **CONFLICT DETECTED** — {len(conflicts)} existing booking(s) overlap.")
 
-                # Show conflicting bookings
-                st.markdown("### 📌 Existing Bookings in Conflict")
+                st.markdown("### 📌 Conflicting Bookings")
                 conflict_display_cols = ['Booking_ID', 'Booking_Date', 'Duration', 'Priority', 'Project', 'Lift_Item']
                 available_display = [c for c in conflict_display_cols if c in conflicts.columns]
                 st.dataframe(conflicts[available_display], use_container_width=True)
 
                 st.markdown("---")
-
-                # AI Priority Score Evaluation
                 st.markdown("### 🤖 AI Priority Score Evaluation")
-                st.markdown("*Score = Project Criticality + Schedule Impact + Urgency + Equipment Suitability + Location Efficiency*")
+                st.caption("Score = Project Criticality + Schedule Impact + Urgency + Equipment Suitability + Location Efficiency")
 
                 resolution_df, new_score, new_breakdown = resolve_conflict_ai(new_booking, conflicts, df)
 
-                # Display YOUR score breakdown
                 st.markdown("---")
                 display_score_breakdown("📗 Your Booking", new_score, new_breakdown)
 
-                # Display each conflict's score
                 for _, res in resolution_df.iterrows():
                     st.markdown("---")
                     display_score_breakdown(
@@ -673,7 +701,6 @@ elif page == "🤖 Booking":
                         res['Conflict_Breakdown']
                     )
 
-                # Final AI Decision
                 st.markdown("---")
                 st.markdown("### 🏆 AI Decision")
 
@@ -684,8 +711,7 @@ elif page == "🤖 Booking":
                             f'<h3>✅ YOUR BOOKING WINS</h3>'
                             f'<p>Score: {res["Your_Score"]}/25 vs {res["Existing_Score"]}/25</p>'
                             f'<p>{res["Resolution"]}</p>'
-                            f'</div>',
-                            unsafe_allow_html=True
+                            f'</div>', unsafe_allow_html=True
                         )
                     else:
                         st.markdown(
@@ -693,66 +719,57 @@ elif page == "🤖 Booking":
                             f'<h3>❌ EXISTING BOOKING WINS</h3>'
                             f'<p>Score: {res["Existing_Score"]}/25 vs {res["Your_Score"]}/25</p>'
                             f'<p>{res["Resolution"]}</p>'
-                            f'</div>',
-                            unsafe_allow_html=True
+                            f'</div>', unsafe_allow_html=True
                         )
 
-                # Manager Override Section
                 st.markdown("---")
                 st.markdown("### 🔐 Manager Override")
-                st.markdown("If this booking is critical, a Manager can override the AI decision regardless of score.")
+                st.markdown("Override the AI decision with Manager's authority.")
 
-                override_col1, override_col2 = st.columns(2)
+                mgr_col1, mgr_col2 = st.columns(2)
+                with mgr_col1:
+                    manager_name = st.text_input("Manager Name", key='mgr_name')
+                    manager_reason = st.text_area("Override Reason", placeholder="e.g., Client deadline, safety critical...", key='mgr_reason')
 
-                with override_col1:
-                    manager_name = st.text_input("Manager Name (for approval)", key='mgr_name')
-                    manager_reason = st.text_area("Override Reason", placeholder="e.g., Client deadline, safety requirement...", key='mgr_reason')
-
-                with override_col2:
+                with mgr_col2:
                     st.markdown("")
                     st.markdown("")
-                    if st.button("✅ Manager Override — Approve My Booking", type="primary", use_container_width=True):
+                    if st.button("✅ Manager Override — Approve", type="primary", use_container_width=True):
                         if manager_name and manager_reason:
                             st.success("✅ **MANAGER OVERRIDE APPROVED**")
                             st.markdown(f"**Approved by:** {manager_name}")
                             st.markdown(f"**Reason:** {manager_reason}")
-                            st.markdown(f"Conflicting booking(s) will be rescheduled.")
                             st.balloons()
                         else:
-                            st.error("⚠️ Please enter Manager Name and Override Reason.")
+                            st.error("Please enter Manager Name and Reason.")
 
                     if st.button("❌ Accept AI Decision", use_container_width=True):
                         all_wins = resolution_df['New_Booking_Wins'].all()
                         if all_wins:
-                            st.success("✅ **BOOKING CONFIRMED** — AI decision accepted.")
+                            st.success("✅ **BOOKING CONFIRMED**")
                         else:
-                            st.info("📋 **BOOKING QUEUED** — You'll be notified when equipment becomes available.")
-                            st.markdown("**💡 Suggestions:**")
-                            st.markdown("- Try a different date")
-                            st.markdown("- Select a different equipment unit")
-                            st.markdown("- Increase priority level if task is urgent")
+                            st.info("📋 **BOOKING QUEUED** — You'll be notified when available.")
+                            st.markdown("**💡 Try:** Different date, different unit, or higher priority")
 
             else:
-                # No conflict
-                st.success("✅ **BOOKING APPROVED** — No conflicts detected!")
+                st.success("✅ **BOOKING APPROVED** — No conflicts!")
                 st.markdown(f"Equipment **{book_id}** ({book_type}) is available for **{book_booking_date}**.")
 
-                # Show AI score anyway
                 eq_rows = df[df['Equipment_ID'] == book_id]
                 eq_info = eq_rows.iloc[0] if len(eq_rows) > 0 else {}
                 score, breakdown = calculate_ai_priority_score(new_booking, df, eq_info)
 
                 st.markdown("---")
                 display_score_breakdown("📗 Your Booking Score", score, breakdown)
-
                 st.balloons()
 
 
 # ============================================================
 # PAGE: ANALYTICS
 # ============================================================
-elif page == "📈 Analytics":
-    st.header("📈 Equipment Utilization Analytics")
+elif page == "Analytics":
+    st.markdown('<div class="main-header">📈 Analytics</div>', unsafe_allow_html=True)
+    st.markdown("")
 
     if 'Crane_Utilization_Pct' in df.columns:
         st.subheader("Equipment Utilization by Type")
@@ -766,8 +783,6 @@ elif page == "📈 Analytics":
         conflict_by_type = df[df['Has_Conflict'] == 'Yes'].groupby('Equipment_Type').size().sort_values(ascending=False)
         if not conflict_by_type.empty:
             st.bar_chart(conflict_by_type)
-        else:
-            st.info("No conflicts recorded in the dataset.")
 
     st.markdown("---")
 
@@ -785,13 +800,12 @@ elif page == "📈 Analytics":
     st.markdown("---")
 
     st.subheader("Booking Duration Distribution")
-    duration_counts = df['Duration'].value_counts()
-    st.bar_chart(duration_counts)
+    st.bar_chart(df['Duration'].value_counts())
 
 
 # ============================================================
 # FOOTER
 # ============================================================
 st.markdown("---")
-st.caption(f"🏗️ Equipment Booking AI System | Shipyard Operations | Built with Streamlit | {datetime.now().strftime('%Y')}")
+st.caption(f"🏗️ Equipment Booking AI v2.0 | Shipyard Operations | {datetime.now().strftime('%Y')}")
 
